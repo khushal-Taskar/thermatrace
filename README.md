@@ -4,6 +4,14 @@
 
 A complete local software simulation for a final-year engineering project. ThermaTrace brings pharmaceutical containers, electric transport vehicles, battery health, delivery routes, incidents, historical telemetry, and explainable local AI into one responsive operations control center. No devices, cloud subscriptions, maps keys, or paid LLM APIs are required.
 
+## Live demonstration
+
+- Web application: **https://thermatrace-pharma.vercel.app**
+- API health: **https://thermatrace-api.onrender.com/api/health**
+- Demo admin: `admin@thermatrace.local` / `khushal@123`
+
+The public demo uses Vercel, Render and Supabase free tiers. The Render service can sleep after inactivity, so the first request may take about a minute while it wakes. The local setup below remains the full zero-cost option and includes the local voice-model runtime.
+
 ## Problem statement and objectives
 
 Temperature excursions, delivery delays, vehicle failures, and insufficient battery range can compromise temperature-sensitive shipments. This project demonstrates continuous simulated monitoring, early risk prioritization, explainable interventions, and auditable incident records. Its objectives are to correlate transport and cold-chain signals, monitor multiple vehicles, make AI results inspectable, and produce useful operational reports.
