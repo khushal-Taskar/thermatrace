@@ -31,7 +31,7 @@ async def health(request: Request):
 
 
 @router.post("/auth/login")
-async def login(body: LoginRequest, response: Response, request: Request):
+def login(body: LoginRequest, response: Response, request: Request):
     key=request.client.host
     now=time.monotonic()
     attempts[key]=[t for t in attempts[key] if now-t<60]
@@ -48,12 +48,12 @@ async def login(body: LoginRequest, response: Response, request: Request):
 
 
 @router.get("/auth/me")
-async def me(user=Depends(require_user)):
+def me(user=Depends(require_user)):
     return {"id":user.id,"name":user.name,"email":user.email,"role":user.role,"notification_email":user.notification_email,"email_notifications":user.email_notifications}
 
 
 @router.post("/auth/logout")
-async def logout(request: Request, response: Response, user=Depends(require_user)):
+def logout(request: Request, response: Response, user=Depends(require_user)):
     with SessionLocal() as db:
         db.execute(delete(AuthSession).where(AuthSession.token_hash==token_hash(request.cookies["pharma_session"])))
         db.commit()
@@ -62,19 +62,19 @@ async def logout(request: Request, response: Response, user=Depends(require_user
 
 
 @router.get("/overview")
-async def get_overview(user=Depends(require_user)):
+def get_overview(user=Depends(require_user)):
     with SessionLocal() as db:
         return overview(db)
 
 
 @router.get("/vehicles")
-async def get_vehicles(user=Depends(require_user)):
+def get_vehicles(user=Depends(require_user)):
     with SessionLocal() as db:
         return fleet_snapshot(db)
 
 
 @router.get("/vehicles/{vehicle_id}")
-async def get_vehicle(vehicle_id: str, user=Depends(require_user)):
+def get_vehicle(vehicle_id: str, user=Depends(require_user)):
     with SessionLocal() as db:
         items=[s for s in fleet_snapshot(db) if s["vehicle"]["vehicle_id"]==vehicle_id]
         if not items:
@@ -83,25 +83,25 @@ async def get_vehicle(vehicle_id: str, user=Depends(require_user)):
 
 
 @router.get("/containers")
-async def get_containers(user=Depends(require_user)):
+def get_containers(user=Depends(require_user)):
     with SessionLocal() as db:
         return [s["container"] for s in fleet_snapshot(db)]
 
 
 @router.get("/deliveries")
-async def get_deliveries(user=Depends(require_user)):
+def get_deliveries(user=Depends(require_user)):
     with SessionLocal() as db:
         return [s["delivery"] for s in fleet_snapshot(db)]
 
 
 @router.get("/risk")
-async def get_risks(request: Request,user=Depends(require_user)):
+def get_risks(request: Request,user=Depends(require_user)):
     with SessionLocal() as db:
         return {"model":request.app.state.risk_engine.metadata,"vehicles":sorted(fleet_snapshot(db),key=lambda s:s["risk"]["risk_score"],reverse=True)}
 
 
 @router.get("/alerts")
-async def get_alerts(user=Depends(require_user)):
+def get_alerts(user=Depends(require_user)):
     with SessionLocal() as db:
         return overview(db)["alerts"]
 
@@ -121,7 +121,7 @@ async def acknowledge(alert_id: int,request: Request,user=Depends(require_roles(
 
 
 @router.get("/history")
-async def get_history(vehicle_id: str|None=None,hours: float=Query(default=1,ge=.016,le=720),user=Depends(require_user)):
+def get_history(vehicle_id: str|None=None,hours: float=Query(default=1,ge=.016,le=720),user=Depends(require_user)):
     with SessionLocal() as db:
         if vehicle_id and not db.get(Vehicle,vehicle_id):
             raise HTTPException(404,"Vehicle not found")
@@ -129,7 +129,7 @@ async def get_history(vehicle_id: str|None=None,hours: float=Query(default=1,ge=
 
 
 @router.get("/reports/{kind}")
-async def get_report(kind: str,vehicle_id: str|None=None,hours: int=Query(default=24,ge=1,le=720),user=Depends(require_user)):
+def get_report(kind: str,vehicle_id: str|None=None,hours: int=Query(default=24,ge=1,le=720),user=Depends(require_user)):
     if kind not in ["shipment","vehicle","battery","container","risk","incident"]:
         raise HTTPException(404,"Report type not found")
     with SessionLocal() as db:
@@ -139,7 +139,7 @@ async def get_report(kind: str,vehicle_id: str|None=None,hours: int=Query(defaul
 
 
 @router.get("/reports/{kind}/pdf")
-async def get_report_pdf(kind: str,vehicle_id: str|None=None,hours: int=Query(default=24,ge=1,le=720),user=Depends(require_user)):
+def get_report_pdf(kind: str,vehicle_id: str|None=None,hours: int=Query(default=24,ge=1,le=720),user=Depends(require_user)):
     if kind not in ["shipment","vehicle","battery","container","risk","incident"]:
         raise HTTPException(404,"Report type not found")
     with SessionLocal() as db:
@@ -151,7 +151,7 @@ async def get_report_pdf(kind: str,vehicle_id: str|None=None,hours: int=Query(de
 
 
 @router.post("/assistant")
-async def assistant(body: AssistantRequest,user=Depends(require_user)):
+def assistant(body: AssistantRequest,user=Depends(require_user)):
     with SessionLocal() as db:
         return answer_question(db,body.question)
 
@@ -191,20 +191,20 @@ async def voice_status(user=Depends(require_user)):
 
 
 @router.get("/voice/sessions")
-async def voice_sessions(limit: int=Query(default=20,ge=1,le=100),user=Depends(require_user)):
+def voice_sessions(limit: int=Query(default=20,ge=1,le=100),user=Depends(require_user)):
     with SessionLocal() as db:
         items=db.scalars(select(VoiceSession).order_by(VoiceSession.started_at.desc()).limit(limit))
         return [serialize_session(db,item,include_messages=False) for item in items]
 
 
 @router.get("/voice/sessions/{session_id}")
-async def voice_session_detail(session_id: int,user=Depends(require_user)):
+def voice_session_detail(session_id: int,user=Depends(require_user)):
     with SessionLocal() as db:
         return serialize_session(db,_voice_session(db,session_id))
 
 
 @router.post("/voice/sessions",status_code=201)
-async def start_voice_session(body: VoiceSessionCreate,user=Depends(require_roles("ADMIN","OPERATOR"))):
+def start_voice_session(body: VoiceSessionCreate,user=Depends(require_roles("ADMIN","OPERATOR"))):
     with SessionLocal() as db:
         if body.vehicle_id and not db.get(Vehicle,body.vehicle_id):
             raise HTTPException(404,"Vehicle not found")
@@ -245,7 +245,7 @@ async def voice_audio_turn(session_id: int,audio: UploadFile=File(...),language:
 
 
 @router.post("/voice/sessions/{session_id}/end")
-async def end_voice_session(session_id: int,user=Depends(require_roles("ADMIN","OPERATOR"))):
+def end_voice_session(session_id: int,user=Depends(require_roles("ADMIN","OPERATOR"))):
     with SessionLocal() as db:
         session=_voice_session(db,session_id)
         if session.status=="ACTIVE":
@@ -254,7 +254,7 @@ async def end_voice_session(session_id: int,user=Depends(require_roles("ADMIN","
 
 
 @router.get("/simulation/scenarios")
-async def scenarios(user=Depends(require_user)):
+def scenarios(user=Depends(require_user)):
     return [s.value for s in Scenario]
 
 
@@ -279,7 +279,7 @@ async def set_scenario(body: ScenarioRequest,request: Request,user=Depends(requi
 
 
 @router.get("/settings")
-async def get_settings(user=Depends(require_user)):
+def get_settings(user=Depends(require_user)):
     with SessionLocal() as db:
         system=db.get(SystemSettings,1)
         container=db.scalar(select(Container))
@@ -321,13 +321,13 @@ def serialize_user(user):
 
 
 @router.get("/users")
-async def list_users(user=Depends(require_roles("ADMIN"))):
+def list_users(user=Depends(require_roles("ADMIN"))):
     with SessionLocal() as db:
         return [serialize_user(item) for item in db.scalars(select(User).order_by(User.id))]
 
 
 @router.post("/users",status_code=201)
-async def create_user(body: UserCreate,user=Depends(require_roles("ADMIN"))):
+def create_user(body: UserCreate,user=Depends(require_roles("ADMIN"))):
     with SessionLocal() as db:
         email=body.email.strip().lower()
         if db.scalar(select(User).where(User.email==email)):
@@ -338,7 +338,7 @@ async def create_user(body: UserCreate,user=Depends(require_roles("ADMIN"))):
 
 
 @router.put("/users/{user_id}")
-async def update_user(user_id: int,body: UserUpdate,user=Depends(require_roles("ADMIN"))):
+def update_user(user_id: int,body: UserUpdate,user=Depends(require_roles("ADMIN"))):
     with SessionLocal() as db:
         item=db.get(User,user_id)
         if not item:
@@ -353,13 +353,13 @@ async def update_user(user_id: int,body: UserUpdate,user=Depends(require_roles("
 
 
 @router.put("/me/notifications")
-async def notification_preferences(body: NotificationPreferences,user=Depends(require_user)):
+def notification_preferences(body: NotificationPreferences,user=Depends(require_user)):
     with SessionLocal() as db:
         item=db.get(User,user.id);item.notification_email=body.notification_email;item.email_notifications=body.email_notifications;db.commit();return serialize_user(item)
 
 
 @router.get("/notifications/status")
-async def notification_status(request: Request,user=Depends(require_user)):
+def notification_status(request: Request,user=Depends(require_user)):
     return request.app.state.notifier.status()
 
 
@@ -368,7 +368,7 @@ def serialize_profile(item):
 
 
 @router.get("/medicine-profiles")
-async def medicine_profiles(user=Depends(require_user)):
+def medicine_profiles(user=Depends(require_user)):
     with SessionLocal() as db:
         return [serialize_profile(item) for item in db.scalars(select(MedicineProfile).order_by(MedicineProfile.name))]
 
@@ -386,7 +386,7 @@ async def update_medicine_profile(profile_id: str,body: MedicineProfileUpdate,re
 
 
 @router.post("/routes/refresh")
-async def refresh_routes(user=Depends(require_roles("ADMIN"))):
+def refresh_routes(user=Depends(require_roles("ADMIN"))):
     updated=[];errors=[]
     with SessionLocal() as db:
         for route in db.scalars(select(Route).order_by(Route.id)):
@@ -401,14 +401,14 @@ async def refresh_routes(user=Depends(require_roles("ADMIN"))):
 
 
 @router.get("/integrations/mqtt/status")
-async def mqtt_status(request: Request,user=Depends(require_roles("ADMIN"))):
+def mqtt_status(request: Request,user=Depends(require_roles("ADMIN"))):
     with SessionLocal() as db:
         devices=[{"device_id":d.id,"vehicle_id":d.vehicle_id,"topic":d.topic,"active":d.active,"last_seen":d.last_seen.isoformat() if d.last_seen else None} for d in db.scalars(select(SensorDevice))]
     return {**request.app.state.mqtt.status(),"devices":devices}
 
 
 @router.post("/integrations/mqtt/devices",status_code=201)
-async def register_sensor(body: SensorDeviceRequest,user=Depends(require_roles("ADMIN"))):
+def register_sensor(body: SensorDeviceRequest,user=Depends(require_roles("ADMIN"))):
     with SessionLocal() as db:
         if not db.get(Vehicle,body.vehicle_id): raise HTTPException(404,"Vehicle not found")
         if db.get(SensorDevice,body.device_id): raise HTTPException(409,"Device already exists")
@@ -429,7 +429,7 @@ async def test_sensor_ingest(body: SensorPacket,request: Request,user=Depends(re
 
 
 @router.get("/ai/model-validation")
-async def model_validation(request: Request,user=Depends(require_user)):
+def model_validation(request: Request,user=Depends(require_user)):
     metadata=request.app.state.risk_engine.metadata
     with SessionLocal() as db:
         versions=[{"version":item.version,"training_source":item.training_source,"sample_count":item.sample_count,"metrics":item.metrics,"active":item.active,"created_at":item.created_at.isoformat()} for item in db.scalars(select(ModelVersion).order_by(ModelVersion.created_at.desc()))]
@@ -437,7 +437,7 @@ async def model_validation(request: Request,user=Depends(require_user)):
 
 
 @router.post("/ws-ticket")
-async def ws_ticket(request: Request,user=Depends(require_user)):
+def ws_ticket(request: Request,user=Depends(require_user)):
     tickets=request.app.state.tickets
     now=time.monotonic()
     for key, value in list(tickets.items()):
