@@ -162,16 +162,22 @@ class Simulator:
             return
         # One hour of clearly synthetic pre-roll to make the initial demonstration useful.
         original_interval=self.interval
+        # Resolve the fleet graph once. Re-querying every relationship for all 60
+        # samples is harmless with local SQLite but creates hundreds of network
+        # round-trips on managed PostgreSQL and can exceed cloud health-check timeouts.
+        contexts=[]
+        for vehicle in db.scalars(select(Vehicle).order_by(Vehicle.id)):
+            delivery=db.scalar(select(Delivery).where(Delivery.vehicle_id==vehicle.id))
+            container=db.get(Container,delivery.container_id)
+            profile=db.get(MedicineProfile,container.medicine_profile_id) if container.medicine_profile_id else None
+            contexts.append((vehicle,container,delivery,db.get(Route,delivery.route_id),profile))
         # Historical timestamps are pre-roll labels; dynamics use the configured tick interval.
         for n in range(60):
             self.ticks=n
             now=utcnow()-timedelta(minutes=60-n)
-            for vehicle in db.scalars(select(Vehicle).order_by(Vehicle.id)):
-                delivery=db.scalar(select(Delivery).where(Delivery.vehicle_id==vehicle.id))
-                container=db.get(Container,delivery.container_id)
-                profile=db.get(MedicineProfile,container.medicine_profile_id) if container.medicine_profile_id else None
-                snapshot=self.advance(vehicle,container,delivery,db.get(Route,delivery.route_id),now,warm_start=n==0,profile=profile)
+            for vehicle,container,delivery,route,profile in contexts:
+                snapshot=self.advance(vehicle,container,delivery,route,now,warm_start=n==0,profile=profile)
                 self.persist(db,snapshot,now,incidents=False)
-            db.commit()
+        db.commit()
         self.interval=original_interval
         self.tick(db,force=True)
