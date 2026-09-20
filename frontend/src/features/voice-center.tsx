@@ -90,7 +90,7 @@ export function VoiceCenter(){
      recorder.current.start(250);setRecording(true);
    }catch(e){const message=(e as Error).message;setVoiceFeedback(message);notify(message);}
  }
- function stopRecording(){if(speechRecognition.current){setVoiceFeedback("Preparing your question…");speechRecognition.current.stop();return;}if(recorder.current?.state==="recording"){setVoiceFeedback("Preparing the recording…");recorder.current.stop();}setRecording(false);}
+ function stopRecording(){if(speechRecognition.current){const active=speechRecognition.current;setVoiceFeedback("Preparing your question…");active.stop();window.setTimeout(()=>{if(speechRecognition.current!==active)return;speechRecognition.current=null;active.abort();setRecording(false);setVoiceFeedback("No complete speech was detected. Try again, select the conversation language, or type your question below.");},2500);return;}if(recorder.current?.state==="recording"){setVoiceFeedback("Preparing the recording…");recorder.current.stop();}setRecording(false);}
  async function openHistory(id:number){setBusy(true);try{setDetail(await api<VoiceSession>(`/voice/sessions/${id}`));}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
 
  return <div className="voice-page">
