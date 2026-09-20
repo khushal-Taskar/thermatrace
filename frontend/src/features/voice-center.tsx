@@ -70,13 +70,15 @@ export function VoiceCenter(){
        const SpeechRecognition=browserSpeechConstructor();
        if(!SpeechRecognition)throw new Error("This browser does not provide speech recognition. Use Chrome or Edge, or type your question below.");
        const recognition=new SpeechRecognition(),locales:Record<string,string>={hi:"hi-IN",en:"en-IN",mr:"mr-IN"};
-       let finalText="",recognitionFailed=false;
+       let finalText="",recognitionFailed=false,recognitionStarted=false,startupTimedOut=false,startupTimer:number|undefined;
        recognition.lang=locales[language]||navigator.language||"en-IN";recognition.continuous=false;recognition.interimResults=true;recognition.maxAlternatives=1;
-       recognition.onstart=()=>{setRecording(true);setVoiceFeedback("Listening through the browser microphone…");};
+       recognition.onstart=()=>{recognitionStarted=true;if(startupTimer)window.clearTimeout(startupTimer);setRecording(true);setVoiceFeedback("Listening through the browser microphone…");};
        recognition.onresult=event=>{let heard="";for(let i=event.resultIndex;i<event.results.length;i++){const text=event.results[i][0]?.transcript||"";heard+=text;if(event.results[i].isFinal)finalText+=text;}if(heard.trim())setVoiceFeedback(`Heard: ${heard.trim()}`);};
-       recognition.onerror=event=>{recognitionFailed=true;const denied=event.error==="not-allowed"||event.error==="service-not-allowed";const message=denied?"Microphone permission was denied. Allow microphone access, or type your question below.":"Browser speech recognition could not hear a complete question. Please try again.";setRecording(false);setVoiceFeedback(message);notify(message);};
-       recognition.onend=()=>{speechRecognition.current=null;setRecording(false);const question=finalText.trim();if(question){setVoiceFeedback("Checking live telemetry…");void submitQuestion(question);}else if(!recognitionFailed){setVoiceFeedback("No speech was detected. Press the microphone and try again.");}};
-       speechRecognition.current=recognition;recognition.start();return;
+       recognition.onerror=event=>{if(startupTimer)window.clearTimeout(startupTimer);if(startupTimedOut)return;recognitionFailed=true;const denied=event.error==="not-allowed"||event.error==="service-not-allowed";const message=denied?"Microphone permission was denied. Allow microphone access, or type your question below.":"Browser speech recognition could not hear a complete question. Please try again.";setRecording(false);setVoiceFeedback(message);notify(message);};
+       recognition.onend=()=>{if(startupTimer)window.clearTimeout(startupTimer);speechRecognition.current=null;setRecording(false);const question=finalText.trim();if(question){setVoiceFeedback("Checking live telemetry…");void submitQuestion(question);}else if(!recognitionFailed){setVoiceFeedback("No speech was detected. Press the microphone and try again.");}};
+       speechRecognition.current=recognition;setRecording(true);setVoiceFeedback("Waiting for microphone access…");
+       startupTimer=window.setTimeout(()=>{if(recognitionStarted||speechRecognition.current!==recognition)return;startupTimedOut=true;recognitionFailed=true;speechRecognition.current=null;recognition.abort();setRecording(false);const message="Browser speech recognition did not start. Check microphone permission, or type your question below.";setVoiceFeedback(message);notify(message);},6000);
+       try{recognition.start();}catch(error){window.clearTimeout(startupTimer);speechRecognition.current=null;setRecording(false);throw error;}return;
      }
      if(!navigator.mediaDevices?.getUserMedia)throw new Error("Microphone access requires localhost or HTTPS in Chrome/Edge");
      stream.current=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
