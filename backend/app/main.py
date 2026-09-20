@@ -38,12 +38,18 @@ async def lifespan(app):
         app.state.simulator.bootstrap_history(db)
         app.state.simulator.tick(db,force=True)
 
-    async def broadcast():
+    def load_overview():
         with SessionLocal() as db:
-            payload=overview(db)
+            return overview(db)
+
+    async def broadcast():
+        # SQLAlchemy is intentionally synchronous so the same code works with
+        # SQLite and PostgreSQL.  Managed PostgreSQL adds network latency, so
+        # keep those calls off the asyncio event loop that serves HTTP and WS.
+        payload=await asyncio.to_thread(load_overview)
         async def send(ws,token):
             try:
-                if not get_user(token):
+                if not await asyncio.to_thread(get_user,token):
                     await ws.close(code=4401)
                     app.state.clients.pop(ws,None)
                     return
@@ -56,13 +62,16 @@ async def lifespan(app):
     app.state.mqtt=MQTTAdapter(app.state.risk_engine,app.state.simulator,lambda: asyncio.run_coroutine_threadsafe(broadcast(),event_loop))
     app.state.mqtt.start()
 
+    def simulation_cycle():
+        with SessionLocal() as db:
+            app.state.simulator.tick(db)
+            app.state.notifier.dispatch(db)
+
     async def loop():
         while True:
             await asyncio.sleep(settings.simulation_interval)
             try:
-                with SessionLocal() as db:
-                    app.state.simulator.tick(db)
-                    app.state.notifier.dispatch(db)
+                await asyncio.to_thread(simulation_cycle)
                 await broadcast()
             except Exception:
                 logger.exception("Simulation tick failed")
@@ -103,14 +112,16 @@ async def telemetry(ws: WebSocket):
         await ws.close(code=4403)
         return
     ticket=app.state.tickets.pop(ws.query_params.get("ticket",""),None)
-    if not ticket or ticket[1]<time.monotonic() or not get_user(ticket[0]):
+    if not ticket or ticket[1]<time.monotonic() or not await asyncio.to_thread(get_user,ticket[0]):
         await ws.close(code=4401)
         return
     await ws.accept()
     app.state.clients[ws]=ticket[0]
     try:
-        with SessionLocal() as db:
-            await ws.send_json(overview(db))
+        def load_initial_overview():
+            with SessionLocal() as db:
+                return overview(db)
+        await ws.send_json(await asyncio.to_thread(load_initial_overview))
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:
