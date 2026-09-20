@@ -15,21 +15,35 @@ const voiceLanguages=[
 ];
 const languageLabel=(value:string)=>voiceLanguages.find(item=>item.value===value)?.label||value.toUpperCase();
 
+type BrowserSpeechRecognition={
+ lang:string;continuous:boolean;interimResults:boolean;maxAlternatives:number;
+ onstart:(event:Event)=>void;onresult:(event:{resultIndex:number;results:ArrayLike<{isFinal:boolean;0:{transcript:string}}>} )=>void;
+ onerror:(event:{error?:string})=>void;onend:(event:Event)=>void;start:()=>void;stop:()=>void;abort:()=>void;
+};
+type BrowserSpeechRecognitionConstructor=new()=>BrowserSpeechRecognition;
+
+function browserSpeechConstructor(){
+ if(typeof window==="undefined")return null;
+ const voiceWindow=window as typeof window&{SpeechRecognition?:BrowserSpeechRecognitionConstructor;webkitSpeechRecognition?:BrowserSpeechRecognitionConstructor};
+ return voiceWindow.SpeechRecognition||voiceWindow.webkitSpeechRecognition||null;
+}
+
 function elapsed(from:string){const normalized=from.endsWith("Z")||/[+-]\d\d:\d\d$/.test(from)?from:`${from}Z`;const seconds=Math.max(0,Math.floor((Date.now()-new Date(normalized).getTime())/1000));return `${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}`;}
 
 export function VoiceCenter(){
  const {data,user,notify}=useMonitor();
  const [runtime,setRuntime]=useState<VoiceRuntime|null>(null),[history,setHistory]=useState<VoiceSession[]>([]),[session,setSession]=useState<VoiceSession|null>(null);
- const [vehicleId,setVehicleId]=useState(data?.fleet[0]?.vehicle.vehicle_id||""),[language,setLanguage]=useState("auto"),[recording,setRecording]=useState(false),[speaking,setSpeaking]=useState(false),[busy,setBusy]=useState(false),[voiceFeedback,setVoiceFeedback]=useState<string|null>(null),[draft,setDraft]=useState(""),[clock,setClock]=useState("00:00"),[detail,setDetail]=useState<VoiceSession|null>(null);
- const recorder=useRef<MediaRecorder|null>(null),chunks=useRef<Blob[]>([]),stream=useRef<MediaStream|null>(null),activeAudio=useRef<HTMLAudioElement|null>(null),messagesEnd=useRef<HTMLDivElement|null>(null),audioReplies=useRef(new Map<number,{base64:string,mime:string,language:string}>());
+ const [vehicleId,setVehicleId]=useState(data?.fleet[0]?.vehicle.vehicle_id||""),[language,setLanguage]=useState("auto"),[recording,setRecording]=useState(false),[speaking,setSpeaking]=useState(false),[busy,setBusy]=useState(false),[voiceFeedback,setVoiceFeedback]=useState<string|null>(null),[draft,setDraft]=useState(""),[clock,setClock]=useState("00:00"),[detail,setDetail]=useState<VoiceSession|null>(null),[browserSpeechAvailable,setBrowserSpeechAvailable]=useState(false);
+ const recorder=useRef<MediaRecorder|null>(null),speechRecognition=useRef<BrowserSpeechRecognition|null>(null),chunks=useRef<Blob[]>([]),stream=useRef<MediaStream|null>(null),activeAudio=useRef<HTMLAudioElement|null>(null),messagesEnd=useRef<HTMLDivElement|null>(null),audioReplies=useRef(new Map<number,{base64:string,mime:string,language:string}>());
  const canCall=user?.role==="ADMIN"||user?.role==="OPERATOR";
- const microphoneAvailable=runtime?.speech_to_text!==false;
+ const microphoneAvailable=Boolean(runtime?.speech_to_text||browserSpeechAvailable);
  const selected=useMemo(()=>data?.fleet.find(item=>item.vehicle.vehicle_id===(session?.vehicle_id||vehicleId)),[data,vehicleId,session?.vehicle_id]);
  const load=useCallback(async()=>{try{const [status,calls]=await Promise.all([api<VoiceRuntime>("/voice/status"),api<VoiceSession[]>("/voice/sessions")]);setRuntime(status);setHistory(calls);}catch(e){notify((e as Error).message);}},[notify]);
  useEffect(()=>{load();},[load]);
+ useEffect(()=>{setBrowserSpeechAvailable(Boolean(browserSpeechConstructor()));},[]);
  useEffect(()=>{if(!session||session.status!=="ACTIVE")return;const timer=setInterval(()=>setClock(elapsed(session.started_at)),1000);return()=>clearInterval(timer);},[session]);
  useEffect(()=>{messagesEnd.current?.scrollIntoView({behavior:"smooth"});},[session?.messages?.length]);
- useEffect(()=>()=>{stream.current?.getTracks().forEach(track=>track.stop());activeAudio.current?.pause();window.speechSynthesis?.cancel();},[]);
+ useEffect(()=>()=>{speechRecognition.current?.abort();stream.current?.getTracks().forEach(track=>track.stop());activeAudio.current?.pause();window.speechSynthesis?.cancel();},[]);
 
  function playAnswer(messageId:number,text:string,language:string){
    activeAudio.current?.pause();window.speechSynthesis?.cancel();setSpeaking(true);setVoiceFeedback("Speaking the local AI answer…");
@@ -45,13 +59,25 @@ export function VoiceCenter(){
  async function startCall(){setBusy(true);try{const next=await api<VoiceSession>("/voice/sessions",{method:"POST",body:JSON.stringify({vehicle_id:vehicleId||null,language})});setSession(next);setDetail(null);setClock("00:00");notify("Local AI voice session started");}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
  async function finishCall(){if(!session)return;if(recording)stopRecording();setBusy(true);try{const completed=await api<VoiceSession>(`/voice/sessions/${session.id}/end`,{method:"POST"});setSession(completed);setDetail(completed);await load();notify("Call ended and structured notes were saved");}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
  function appendTurn(turn:VoiceTurn){if(turn.audio_base64)audioReplies.current.set(turn.assistant.id,{base64:turn.audio_base64,mime:turn.audio_mime||"audio/wav",language:turn.spoken_language});setSession(current=>current?{...current,vehicle_id:turn.vehicle_id,messages:[...(current.messages||[]),turn.operator,turn.assistant]}:current);setVoiceFeedback("Answer ready. Playing it now…");window.setTimeout(()=>playAnswer(turn.assistant.id,turn.assistant.text,turn.spoken_language),80);}
- async function sendText(){if(!session||!draft.trim()||busy)return;const question=draft.trim();setDraft("");setBusy(true);try{const turn=await api<VoiceTurn>(`/voice/sessions/${session.id}/message`,{method:"POST",body:JSON.stringify({text:question,language})});appendTurn(turn);}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
+ async function submitQuestion(question:string){if(!session||!question.trim()||busy)return;setBusy(true);try{const turn=await api<VoiceTurn>(`/voice/sessions/${session.id}/message`,{method:"POST",body:JSON.stringify({text:question.trim(),language})});appendTurn(turn);}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
+ async function sendText(){const question=draft.trim();if(!question)return;setDraft("");await submitQuestion(question);}
  async function upload(blob:Blob){if(!session)return;setBusy(true);setVoiceFeedback("Transcribing speech and checking live telemetry…");try{const form=new FormData();form.append("audio",blob,`turn.${blob.type.includes("mp4")?"mp4":"webm"}`);form.append("language",language);const turn=await apiForm<VoiceTurn>(`/voice/sessions/${session.id}/turn`,form);appendTurn(turn);}catch(e){const message=(e as Error).message;setVoiceFeedback(message);notify(message);}finally{setBusy(false);}}
  async function startRecording(){
    if(!session||busy)return;
    try{
-     if(!microphoneAvailable)throw new Error("Microphone AI runs in the local desktop demo. Type your question here; the cloud agent will answer and speak it.");
      activeAudio.current?.pause();window.speechSynthesis?.cancel();setSpeaking(false);setVoiceFeedback(null);
+     if(!runtime?.speech_to_text){
+       const SpeechRecognition=browserSpeechConstructor();
+       if(!SpeechRecognition)throw new Error("This browser does not provide speech recognition. Use Chrome or Edge, or type your question below.");
+       const recognition=new SpeechRecognition(),locales:Record<string,string>={hi:"hi-IN",en:"en-IN",mr:"mr-IN"};
+       let finalText="",recognitionFailed=false;
+       recognition.lang=locales[language]||navigator.language||"en-IN";recognition.continuous=false;recognition.interimResults=true;recognition.maxAlternatives=1;
+       recognition.onstart=()=>{setRecording(true);setVoiceFeedback("Listening through the browser microphone…");};
+       recognition.onresult=event=>{let heard="";for(let i=event.resultIndex;i<event.results.length;i++){const text=event.results[i][0]?.transcript||"";heard+=text;if(event.results[i].isFinal)finalText+=text;}if(heard.trim())setVoiceFeedback(`Heard: ${heard.trim()}`);};
+       recognition.onerror=event=>{recognitionFailed=true;const denied=event.error==="not-allowed"||event.error==="service-not-allowed";const message=denied?"Microphone permission was denied. Allow microphone access, or type your question below.":"Browser speech recognition could not hear a complete question. Please try again.";setRecording(false);setVoiceFeedback(message);notify(message);};
+       recognition.onend=()=>{speechRecognition.current=null;setRecording(false);const question=finalText.trim();if(question){setVoiceFeedback("Checking live telemetry…");void submitQuestion(question);}else if(!recognitionFailed){setVoiceFeedback("No speech was detected. Press the microphone and try again.");}};
+       speechRecognition.current=recognition;recognition.start();return;
+     }
      if(!navigator.mediaDevices?.getUserMedia)throw new Error("Microphone access requires localhost or HTTPS in Chrome/Edge");
      stream.current=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
      const preferred=["audio/webm;codecs=opus","audio/webm","audio/mp4"].find(type=>MediaRecorder.isTypeSupported(type));
@@ -62,13 +88,13 @@ export function VoiceCenter(){
      recorder.current.start(250);setRecording(true);
    }catch(e){const message=(e as Error).message;setVoiceFeedback(message);notify(message);}
  }
- function stopRecording(){if(recorder.current?.state==="recording"){setVoiceFeedback("Preparing the recording…");recorder.current.stop();}setRecording(false);}
+ function stopRecording(){if(speechRecognition.current){setVoiceFeedback("Preparing your question…");speechRecognition.current.stop();return;}if(recorder.current?.state==="recording"){setVoiceFeedback("Preparing the recording…");recorder.current.stop();}setRecording(false);}
  async function openHistory(id:number){setBusy(true);try{setDetail(await api<VoiceSession>(`/voice/sessions/${id}`));}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
 
  return <div className="voice-page">
    <div className="voice-runtime-strip">
-    <span className={cn("runtime-dot",(runtime?.ready||runtime?.speech_to_text===false)&&"ready")}/><strong>{runtime?.ready?"Local voice intelligence ready":runtime?.speech_to_text===false?"Cloud voice fallback ready":"Local runtime starting"}</strong>
-    <span><BrainCircuit size={13}/>{runtime?.ollama_model||"Qwen local model"}</span><span><Mic size={13}/>{runtime?.whisper_model||"Whisper"} speech recognition</span><span><ShieldCheck size={13}/>Audio is not retained</span>
+    <span className={cn("runtime-dot",(runtime?.ready||browserSpeechAvailable)&&"ready")}/><strong>{runtime?.ready?"Local voice intelligence ready":browserSpeechAvailable?"Browser voice fallback ready":"Voice runtime unavailable"}</strong>
+    <span><BrainCircuit size={13}/>{runtime?.ollama_model||"Qwen local model"}</span><span><Mic size={13}/>{runtime?.speech_to_text?(runtime.whisper_model||"Whisper"):browserSpeechAvailable?"Browser speech recognition":"Typed questions"}</span><span><ShieldCheck size={13}/>Audio is not stored by ThermaTrace</span>
    </div>
    <div className="voice-layout">
     <Card className="voice-call-card">
@@ -82,14 +108,14 @@ export function VoiceCenter(){
         <header><div><span className="eyebrow">ACTIVE LOCAL SESSION</span><h2>{session.vehicle_id||"Fleet operations"}</h2></div><div className="call-clock"><span/><Clock3 size={14}/>{clock}</div></header>
         <div className={cn("voice-orb",recording&&"listening",busy&&!recording&&"thinking")}><div><Headphones size={38}/></div>{[0,1,2,3,4,5,6].map(i=><i key={i}/>)}</div>
         <strong className="voice-state-label">{recording?"Listening…":speaking?"Speaking…":busy?"Checking live telemetry…":"AI driver agent connected"}</strong><p className="voice-instruction">{recording?"Speak naturally, then press the microphone again.":voiceFeedback||"Press the microphone and ask your next question."}</p>
-        <div className="call-actions"><Button variant="outline" className="end-call" onClick={finishCall} disabled={busy||recording}><PhoneOff size={17}/>End call</Button><button className={cn("mic-control",recording&&"active")} aria-label={recording?"Stop recording":"Start recording"} onClick={recording?stopRecording:startRecording} disabled={busy||!microphoneAvailable} title={microphoneAvailable?"Talk to the local AI agent":"Microphone AI is available in the local desktop demo"}>{recording?<MicOff size={27}/>:<Mic size={27}/>}</button><span className="language-pill"><Languages size={14}/>{languageLabel(language)}</span></div>
+        <div className="call-actions"><Button variant="outline" className="end-call" onClick={finishCall} disabled={busy||recording}><PhoneOff size={17}/>End call</Button><button className={cn("mic-control",recording&&"active")} aria-label={recording?"Stop recording":"Start recording"} onClick={recording?stopRecording:startRecording} disabled={busy||!microphoneAvailable} title={microphoneAvailable?"Talk to the AI operations agent":"Use Chrome or Edge for microphone questions"}>{recording?<MicOff size={27}/>:<Mic size={27}/>}</button><span className="language-pill"><Languages size={14}/>{languageLabel(language)}</span></div>
         <div className="voice-transcript" aria-live="polite">{!session.messages?.length&&<div className="voice-empty"><Sparkles size={18}/><p>Try “Kya yeh vehicle destination tak safely pahunch jayegi?”</p></div>}<AnimatePresence>{session.messages?.map(message=><motion.div initial={{opacity:0,y:5}} animate={{opacity:1,y:0}} key={message.id} className={cn("voice-message",message.role.toLowerCase())}><span>{message.role==="USER"?"YOU":"AI AGENT"} · {time(message.created_at)}</span><p>{message.text}</p>{message.role==="ASSISTANT"&&<button onClick={()=>playAnswer(message.id,message.text,message.language)} aria-label="Play answer"><Volume2 size={14}/>Play answer</button>}</motion.div>)}</AnimatePresence><div ref={messagesEnd}/></div>
         <div className="voice-text-fallback"><input value={draft} onChange={event=>setDraft(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")sendText();}} placeholder="Type a question when a microphone is unavailable…"/><Button size="icon" onClick={sendText} disabled={busy||!draft.trim()} aria-label="Send typed question"><Send size={16}/></Button></div>
       </div>}
     </Card>
     <div className="voice-side-column">
       <Card className="voice-context-card"><div className="card-heading"><div><span className="eyebrow">LIVE CALL CONTEXT</span><h2>{selected?.vehicle.vehicle_id||"Select a vehicle"}</h2></div><Radio size={18}/></div>{selected?<><div className="context-risk"><div><span>AI risk score</span><strong>{selected.risk.risk_score}<small>/100</small></strong></div><Badge value={selected.risk.risk_level}/></div><div className="context-grid"><div><span>Battery SOC</span><strong>{selected.battery.soc.toFixed(1)}%</strong></div><div><span>Battery temp</span><strong>{selected.battery.battery_temperature.toFixed(1)}°C</strong></div><div><span>Container</span><strong>{selected.container.temperature.toFixed(1)}°C</strong></div><div><span>Distance left</span><strong>{selected.delivery.distance_remaining.toFixed(1)} km</strong></div></div><div className="voice-recommendation"><TriangleAlert size={16}/><p>{selected.risk.recommended_action}</p></div></>:<div className="empty">Vehicle context will appear here.</div>}</Card>
-      <Card className="voice-privacy-card"><ShieldCheck size={20}/><div><strong>Private by design</strong><p>Speech, reasoning, and voice synthesis run locally. Raw microphone recordings are deleted after transcription.</p></div></Card>
+      <Card className="voice-privacy-card"><ShieldCheck size={20}/><div><strong>Privacy-aware voice</strong><p>{runtime?.speech_to_text?"Speech recognition runs on the configured ThermaTrace server; raw recordings are deleted after transcription.":"On this deployment, the browser converts speech to text. ThermaTrace stores the transcript and call note, but does not store microphone audio."}</p></div></Card>
     </div>
    </div>
    <div className="voice-history-heading"><div><span className="eyebrow">CONVERSATION RECORDS</span><h2>Call notes & history</h2></div><span>{history.length} saved sessions</span></div>
