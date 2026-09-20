@@ -1,0 +1,15 @@
+"use client";
+import {useState} from "react";
+import {FlaskConical,Play,RotateCcw} from "lucide-react";
+import {useMonitor} from "@/hooks/use-monitor";
+import {Drawer} from "@/components/drawer";
+import {Button} from "@/components/ui/button";
+import {api} from "@/lib/api";
+import {label} from "@/lib/utils";
+export const scenarios=["NORMAL_DELIVERY","LOW_BATTERY","BATTERY_OVERHEATING","MOTOR_OVERHEATING","CONTAINER_TEMPERATURE_EXCURSION","HIGH_HUMIDITY","DOOR_OPEN","TAMPERING","SHOCK_EVENT","ROUTE_DEVIATION","DELIVERY_DELAY","VEHICLE_FAILURE","BMS_FAULT"];
+export function DemoPanel({open,onClose}:{open:boolean;onClose:()=>void}){
+ const {data,notify}=useMonitor();const [vehicle,setVehicle]=useState("PHARMA-EV-003"),[scenario,setScenario]=useState("CONTAINER_TEMPERATURE_EXCURSION"),[busy,setBusy]=useState(false),[error,setError]=useState("");
+ async function trigger(value:string){setBusy(true);setError("");try{await api("/simulation/scenario",{method:"POST",body:JSON.stringify({vehicle_id:vehicle,scenario:value})});notify(`${label(value)} applied to ${vehicle}. Sensors settle over the next several ticks.`);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ async function reset(){setBusy(true);setError("");try{await api("/simulation/reset",{method:"POST"});notify("All demo journeys restarted. Historical telemetry and incidents retained.");}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ return <Drawer open={open} onClose={onClose} title="Simulation lab" subtitle="DEVELOPER / DEMO CONTROLS"><div className="info-callout"><FlaskConical size={21}/><p>All telemetry is simulated. Trigger a scenario to watch sensor values, AI explanations, and incident alerts respond live.</p></div><label>Target vehicle<select value={vehicle} onChange={e=>setVehicle(e.target.value)}>{data?.fleet.map(s=><option key={s.vehicle.vehicle_id}>{s.vehicle.vehicle_id}</option>)}</select></label><div className="current-scenario">Current scenario <strong>{label(data?.fleet.find(s=>s.vehicle.vehicle_id===vehicle)?.scenario||"")}</strong></div><label>Incident scenario<select value={scenario} onChange={e=>setScenario(e.target.value)}>{scenarios.map(s=><option value={s} key={s}>{label(s)}</option>)}</select></label><div className="scenario-grid">{scenarios.slice(1).map(s=><button key={s} className={s===scenario?"selected":""} onClick={()=>setScenario(s)}>{label(s)}</button>)}</div>{error&&<p role="alert" className="form-error">{error}</p>}<Button disabled={busy} onClick={()=>trigger(scenario)}><Play size={15}/>{busy?"Applying…":"Trigger scenario"}</Button><Button variant="outline" disabled={busy} onClick={()=>trigger("NORMAL_DELIVERY")}><RotateCcw size={15}/>Restore normal conditions</Button><p className="muted small">Analog measurements transition smoothly over 15–60 seconds. Digital faults appear immediately. Restore resets the vehicle's demo SOC and delay; recorded incidents remain available for review.</p><Button variant="outline" disabled={busy} onClick={reset}><RotateCcw size={15}/>Restart all demo journeys</Button></Drawer>;
+}

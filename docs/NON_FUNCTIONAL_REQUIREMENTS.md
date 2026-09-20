@@ -1,0 +1,10 @@
+# Non-functional requirements
+
+- **Security:** hashed PBKDF2 passwords, hashed opaque session tokens, HTTP-only SameSite cookies, origin checks on browser mutations, authenticated expiring one-use WebSocket tickets, bounded validated inputs, ORM parameterized queries, active-user checks, and server-enforced role dependencies. Local demo uses HTTP; HTTPS/Secure cookies are required for a future hosted deployment.
+- **Explainability:** every safety incident records measurements, thresholds, severity, action, and time. Model provenance, synthetic fit metric, scoring equation, and uncertainty are inspectable. No regulatory/clinical predictive claims are made.
+- **Reliability:** lifespan-owned task, transactional writes, logged tick errors, connection backoff, independent slow-client socket timeouts, persisted state and history. One API worker is the validated architecture.
+- **Usability:** responsive LTR English interface, light/dark themes, visible connection/pause state, reusable status semantics, keyboard-focused drawers, loading/error/empty states, and reduced-motion preferences.
+- **Maintainability:** separated API/schemas/models/services/AI/simulation modules; TypeScript contracts; feature pages and reusable visual components. Dependencies are locked/pinned.
+- **Performance:** three-second configured simulation interval, bounded route tracks, shared snapshot frame, indexed history queries, bounded chart sampling, full-range SQL report aggregation, and 30-day telemetry retention. No unmeasured concurrent-fleet throughput guarantee is claimed.
+- **Portability:** no paid APIs, no mandatory external database, no device hardware. SQLAlchemy/Alembic schema supports SQLite and PostgreSQL URLs; a local PostgreSQL Compose service is included. OSM imagery and route refresh need a network connection; stored overlays and telemetry remain local.
+- **Data integrity:** foreign keys, explicit UTC timestamps, retained acknowledgement actor/time, severity re-escalation, simulation-versus-sensor provenance, and report aggregate calculations distinct from chart downsampling.
