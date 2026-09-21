@@ -48,9 +48,15 @@ def runtime_status() -> dict:
     except Exception as exc:
         error=str(exc)
     directory=_voice_dir()
+    try:
+        import edge_tts  # noqa: F401
+        online_text_to_speech=settings.voice_online_tts_enabled
+    except ImportError:
+        online_text_to_speech=False
     voices={
         "hi":(directory/f"{settings.voice_hindi_model}.onnx").exists(),
         "en":(directory/f"{settings.voice_english_model}.onnx").exists(),
+        "mr":online_text_to_speech,
     }
     try:
         import faster_whisper  # noqa: F401
@@ -59,9 +65,10 @@ def runtime_status() -> dict:
         speech_to_text=False
     try:
         import piper  # noqa: F401
-        text_to_speech=True
+        piper_text_to_speech=True
     except ImportError:
-        text_to_speech=False
+        piper_text_to_speech=False
+    text_to_speech=piper_text_to_speech or online_text_to_speech
     ready=ollama and speech_to_text
     return {
         "ready":ready,
@@ -319,6 +326,21 @@ def generate_answer(db, session: VoiceSession, question: str, language: str) -> 
 
 def synthesize_answer(text: str, language: str) -> tuple[str | None,str,str | None]:
     code=language.split("-")[0].lower()
+    if code=="mr" and settings.voice_online_tts_enabled:
+        try:
+            import edge_tts
+            audio=bytearray()
+            communicate=edge_tts.Communicate(text,settings.voice_marathi_online,rate="-8%")
+            for chunk in communicate.stream_sync():
+                if chunk.get("type")=="audio":
+                    audio.extend(chunk["data"])
+            if audio:
+                return base64.b64encode(bytes(audio)).decode("ascii"),code,"audio/mpeg"
+        except Exception:
+            # The transcript and device speech fallback remain available if
+            # the free neural voice endpoint is temporarily unreachable.
+            pass
+        return None,code,None
     if code not in {"hi","en"}:
         return None,language,None
     model_name=settings.voice_hindi_model if code=="hi" else settings.voice_english_model

@@ -89,7 +89,7 @@ export function VoiceCenter(){
  useEffect(()=>{messagesEnd.current?.scrollIntoView({behavior:"smooth"});},[session?.messages?.length]);
  useEffect(()=>()=>{speechRun.current+=1;speechRecognition.current?.abort();stream.current?.getTracks().forEach(track=>track.stop());activeAudio.current?.pause();window.speechSynthesis?.cancel();},[]);
 
- function playAnswer(messageId:number,text:string,language:string){
+ function playAnswer(messageId:number,text:string,language:string,automatic=false){
    speechRun.current+=1;activeAudio.current?.pause();window.speechSynthesis?.cancel();setSpeaking(true);setVoiceFeedback("Speaking the AI answer…");
    const reply=audioReplies.current.get(messageId);
    if(!reply){browserSpeak(text,language);return;}
@@ -97,7 +97,7 @@ export function VoiceCenter(){
    const url=URL.createObjectURL(new Blob([bytes],{type:reply.mime})),audio=new Audio(url);
    activeAudio.current=audio;
    audio.onended=()=>{URL.revokeObjectURL(url);activeAudio.current=null;setSpeaking(false);setVoiceFeedback(null);};audio.onerror=()=>{URL.revokeObjectURL(url);activeAudio.current=null;browserSpeak(text,reply.language);};
-   audio.play().catch(()=>{URL.revokeObjectURL(url);activeAudio.current=null;browserSpeak(text,reply.language);});
+   audio.play().catch(()=>{URL.revokeObjectURL(url);activeAudio.current=null;setSpeaking(false);if(automatic)setVoiceFeedback("Marathi answer ready. Press Play answer to hear it.");else browserSpeak(text,reply.language);});
  }
  async function browserSpeak(text:string,lang:string){
    if(!window.speechSynthesis){setSpeaking(false);setVoiceFeedback("The answer is ready in the transcript. Press Play answer to hear it.");return;}
@@ -111,7 +111,7 @@ export function VoiceCenter(){
  }
  async function startCall(){setBusy(true);try{const next=await api<VoiceSession>("/voice/sessions",{method:"POST",body:JSON.stringify({vehicle_id:vehicleId||null,language})});setSession(next);setDetail(null);setClock("00:00");notify("Local AI voice session started");}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
  async function finishCall(){if(!session)return;if(recording)stopRecording();setBusy(true);try{const completed=await api<VoiceSession>(`/voice/sessions/${session.id}/end`,{method:"POST"});setSession(completed);setDetail(completed);await load();notify("Call ended and structured notes were saved");}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
- function appendTurn(turn:VoiceTurn){if(turn.audio_base64)audioReplies.current.set(turn.assistant.id,{base64:turn.audio_base64,mime:turn.audio_mime||"audio/wav",language:turn.spoken_language});setSession(current=>current?{...current,vehicle_id:turn.vehicle_id,messages:[...(current.messages||[]),turn.operator,turn.assistant]}:current);setVoiceFeedback("Answer ready. Playing it now…");window.setTimeout(()=>playAnswer(turn.assistant.id,turn.assistant.text,turn.spoken_language),80);}
+ function appendTurn(turn:VoiceTurn){if(turn.audio_base64)audioReplies.current.set(turn.assistant.id,{base64:turn.audio_base64,mime:turn.audio_mime||"audio/wav",language:turn.spoken_language});setSession(current=>current?{...current,vehicle_id:turn.vehicle_id,messages:[...(current.messages||[]),turn.operator,turn.assistant]}:current);setVoiceFeedback("Answer ready. Playing it now…");window.setTimeout(()=>playAnswer(turn.assistant.id,turn.assistant.text,turn.spoken_language,true),80);}
  async function submitQuestion(question:string){if(!session||!question.trim()||busy)return;setBusy(true);try{const turn=await api<VoiceTurn>(`/voice/sessions/${session.id}/message`,{method:"POST",body:JSON.stringify({text:question.trim(),language})});appendTurn(turn);}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
  async function sendText(){const question=draft.trim();if(!question)return;setDraft("");await submitQuestion(question);}
  async function upload(blob:Blob){if(!session)return;setBusy(true);setVoiceFeedback("Transcribing speech and checking live telemetry…");try{const form=new FormData();form.append("audio",blob,`turn.${blob.type.includes("mp4")?"mp4":"webm"}`);form.append("language",language);const turn=await apiForm<VoiceTurn>(`/voice/sessions/${session.id}/turn`,form);appendTurn(turn);}catch(e){const message=(e as Error).message;setVoiceFeedback(message);notify(message);}finally{setBusy(false);}}
@@ -148,7 +148,7 @@ export function VoiceCenter(){
 
  return <div className="voice-page">
    <div className="voice-runtime-strip">
-    <span className={cn("runtime-dot",(runtime?.ready||browserSpeechAvailable)&&"ready")}/><strong>{runtime?.ready?"Local voice intelligence ready":browserSpeechAvailable?"Browser voice fallback ready":"Voice runtime unavailable"}</strong>
+    <span className={cn("runtime-dot",(runtime?.ready||runtime?.voices.mr||browserSpeechAvailable)&&"ready")}/><strong>{runtime?.ready?"Local voice intelligence ready":runtime?.voices.mr?"Marathi neural voice ready":browserSpeechAvailable?"Browser voice fallback ready":"Voice runtime unavailable"}</strong>
     <span><BrainCircuit size={13}/>{runtime?.ollama_model||"Qwen local model"}</span><span><Mic size={13}/>{runtime?.speech_to_text?(runtime.whisper_model||"Whisper"):browserSpeechAvailable?"Browser speech recognition":"Typed questions"}</span><span><ShieldCheck size={13}/>Audio is not stored by ThermaTrace</span>
    </div>
    <div className="voice-layout">
@@ -170,7 +170,7 @@ export function VoiceCenter(){
     </Card>
     <div className="voice-side-column">
       <Card className="voice-context-card"><div className="card-heading"><div><span className="eyebrow">LIVE CALL CONTEXT</span><h2>{selected?.vehicle.vehicle_id||"Select a vehicle"}</h2></div><Radio size={18}/></div>{selected?<><div className="context-risk"><div><span>AI risk score</span><strong>{selected.risk.risk_score}<small>/100</small></strong></div><Badge value={selected.risk.risk_level}/></div><div className="context-grid"><div><span>Battery SOC</span><strong>{selected.battery.soc.toFixed(1)}%</strong></div><div><span>Battery temp</span><strong>{selected.battery.battery_temperature.toFixed(1)}°C</strong></div><div><span>Container</span><strong>{selected.container.temperature.toFixed(1)}°C</strong></div><div><span>Distance left</span><strong>{selected.delivery.distance_remaining.toFixed(1)} km</strong></div></div><div className="voice-recommendation"><TriangleAlert size={16}/><p>{selected.risk.recommended_action}</p></div></>:<div className="empty">Vehicle context will appear here.</div>}</Card>
-      <Card className="voice-privacy-card"><ShieldCheck size={20}/><div><strong>Privacy-aware voice</strong><p>{runtime?.speech_to_text?"Speech recognition runs on the configured ThermaTrace server; raw recordings are deleted after transcription.":"On this deployment, the browser converts speech to text. ThermaTrace stores the transcript and call note, but does not store microphone audio."}</p></div></Card>
+      <Card className="voice-privacy-card"><ShieldCheck size={20}/><div><strong>Privacy-aware voice</strong><p>{runtime?.speech_to_text?"Speech recognition runs on the configured ThermaTrace server; raw recordings are deleted after transcription.":"The browser converts speech to text. ThermaTrace stores the transcript and call note, but not microphone audio. Marathi replies use a free neural voice when the device has no Marathi voice."}</p></div></Card>
     </div>
    </div>
    <div className="voice-history-heading"><div><span className="eyebrow">CONVERSATION RECORDS</span><h2>Call notes & history</h2></div><span>{history.length} saved sessions</span></div>

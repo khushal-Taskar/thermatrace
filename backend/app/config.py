@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     voice_model_dir: str = "data/voices"
     voice_hindi_model: str = "hi_IN-pratham-medium"
     voice_english_model: str = "en_US-lessac-medium"
+    voice_online_tts_enabled: bool = True
+    voice_marathi_online: str = "mr-IN-AarohiNeural"
     voice_store_audio: bool = False
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

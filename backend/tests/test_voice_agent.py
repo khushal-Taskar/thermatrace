@@ -69,7 +69,8 @@ def test_viewer_can_read_but_cannot_start_voice_session(client):
     assert client.post("/api/voice/sessions",json={"vehicle_id":"PHARMA-EV-001","language":"auto"}).status_code==403
 
 
-def test_marathi_turn_uses_audited_template_and_browser_voice_fallback(authenticated):
+def test_marathi_turn_uses_audited_template_and_neural_voice(authenticated,monkeypatch):
+    monkeypatch.setattr("app.api.routes.synthesize_answer",lambda text,language:("bXAz",language,"audio/mpeg"))
     created=authenticated.post("/api/voice/sessions",json={"vehicle_id":"PHARMA-EV-004","language":"mr"})
     assert created.status_code==201
     assert created.json()["language"]=="mr"
@@ -83,7 +84,25 @@ def test_marathi_turn_uses_audited_template_and_browser_voice_fallback(authentic
     assert "वाहन सुरक्षितपणे थांबवा" in answer
     assert "Stop safely" not in answer
     assert turn.json()["spoken_language"]=="mr"
-    assert turn.json()["audio_fallback"]=="BROWSER_SPEECH"
-    audio,language,mime=synthesize_answer("वाहनाची स्थिती सांगा.","mr")
-    assert (audio,language,mime)==(None,"mr",None)
+    assert turn.json()["audio_base64"]=="bXAz"
+    assert turn.json()["audio_mime"]=="audio/mpeg"
+    assert turn.json()["audio_fallback"] is None
     assert authenticated.post(f"/api/voice/sessions/{created.json()['id']}/end").status_code==200
+
+
+def test_marathi_synthesis_uses_configured_neural_voice(monkeypatch):
+    class FakeCommunicate:
+        def __init__(self,text,voice,rate):
+            assert "वाहनाची स्थिती" in text
+            assert voice=="mr-IN-AarohiNeural"
+            assert rate=="-8%"
+
+        def stream_sync(self):
+            yield {"type":"WordBoundary","text":"वाहनाची"}
+            yield {"type":"audio","data":b"marathi-mp3"}
+
+    monkeypatch.setattr("edge_tts.Communicate",FakeCommunicate)
+    audio,language,mime=synthesize_answer("वाहनाची स्थिती सांगा.","mr")
+    assert audio=="bWFyYXRoaS1tcDM="
+    assert language=="mr"
+    assert mime=="audio/mpeg"

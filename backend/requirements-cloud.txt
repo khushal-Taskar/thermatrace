@@ -12,3 +12,4 @@ paho-mqtt==2.1.0
 reportlab==4.4.4
 pypdf==6.0.0
 python-multipart==0.0.20
+edge-tts==7.2.8

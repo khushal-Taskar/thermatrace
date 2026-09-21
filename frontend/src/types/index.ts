@@ -14,7 +14,7 @@ export interface Report {title:string;generated_at:string;period_hours:number;ve
 export interface SystemSettings {organization:string;min_temperature:number;max_temperature:number;simulation_paused:boolean;}
 export interface UserAccount {id:number;email:string;name:string;role:"ADMIN"|"OPERATOR"|"VIEWER";active?:boolean;notification_email?:string|null;email_notifications?:boolean;created_at?:string;}
 export interface MedicineProfile {id:string;name:string;min_temperature:number;max_temperature:number;warning_margin:number;max_excursion_minutes:number;prediction_horizon_minutes:number;handling_notes:string;validated:boolean;}
-export interface VoiceRuntime {ready:boolean;ollama:boolean;ollama_model:string;installed_models:string[];speech_to_text:boolean;whisper_model:string;whisper_device:string;text_to_speech:boolean;voices:{hi:boolean;en:boolean};raw_audio_stored:boolean;error:string|null;}
+export interface VoiceRuntime {ready:boolean;ollama:boolean;ollama_model:string;installed_models:string[];speech_to_text:boolean;whisper_model:string;whisper_device:string;text_to_speech:boolean;voices:{hi:boolean;en:boolean;mr:boolean};raw_audio_stored:boolean;error:string|null;}
 export interface VoiceMessage {id:number;role:"USER"|"ASSISTANT";text:string;language:string;source:string;created_at:string;}
 export interface VoiceNotes {topics?:string[];key_facts?:string[];risks?:string[];recommended_actions?:string[];data_timestamp?:string;raw_audio_retained?:boolean;}
 export interface VoiceSession {id:number;user_id:number;vehicle_id:string|null;language:string;status:"ACTIVE"|"COMPLETED";started_at:string;ended_at:string|null;summary:string|null;notes:VoiceNotes;messages?:VoiceMessage[];}
