@@ -70,7 +70,7 @@ def test_viewer_can_read_but_cannot_start_voice_session(client):
 
 
 def test_marathi_turn_uses_audited_template_and_browser_voice_fallback(authenticated):
-    created=authenticated.post("/api/voice/sessions",json={"vehicle_id":"PHARMA-EV-002","language":"mr"})
+    created=authenticated.post("/api/voice/sessions",json={"vehicle_id":"PHARMA-EV-004","language":"mr"})
     assert created.status_code==201
     assert created.json()["language"]=="mr"
     turn=authenticated.post(
@@ -78,7 +78,10 @@ def test_marathi_turn_uses_audited_template_and_browser_voice_fallback(authentic
         json={"text":"बॅटरी आणि कंटेनरची स्थिती सांगा.","language":"mr"},
     )
     assert turn.status_code==200
-    assert "बॅटरी SOC" in turn.json()["assistant"]["text"]
+    answer=turn.json()["assistant"]["text"]
+    assert "बॅटरीची चार्ज पातळी" in answer
+    assert "वाहन सुरक्षितपणे थांबवा" in answer
+    assert "Stop safely" not in answer
     assert turn.json()["spoken_language"]=="mr"
     assert turn.json()["audio_fallback"]=="BROWSER_SPEECH"
     audio,language,mime=synthesize_answer("वाहनाची स्थिती सांगा.","mr")

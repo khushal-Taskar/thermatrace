@@ -173,16 +173,29 @@ def _fallback_answer(evidence: dict, language: str="en") -> str:
         assessments={"LIKELY_TO_REACH":"सुरक्षितपणे पोहोचण्याची शक्यता चांगली","MAY_REACH_WITH_RISK":"पोहोचू शकते, परंतु धोका आहे","INTERVENTION_REQUIRED":"तातडीचा हस्तक्षेप आवश्यक"}
         actions={
             "Continue monitoring the delivery.":"डिलिव्हरीचे निरीक्षण सुरू ठेवा.",
+            "Review current telemetry and compare with recent history.":"सध्याची टेलिमेट्री तपासा आणि अलीकडील इतिहासाशी तुलना करा.",
             "Notify receiving facility and review remaining cooling capacity.":"स्वीकारणाऱ्या केंद्राला कळवा आणि उरलेली शीतकरण क्षमता तपासा.",
             "Check range margin and divert to a charging or replacement vehicle point.":"उपलब्ध अंतर तपासा आणि चार्जिंग केंद्राकडे वळवा किंवा बदली वाहनाची व्यवस्था करा.",
+            "Arrange a vehicle transfer before battery depletion.":"बॅटरी संपण्यापूर्वी शिपमेंट दुसऱ्या वाहनात हलवण्याची व्यवस्था करा.",
+            "Stop safely, reduce load, and inspect the battery cooling system.":"वाहन सुरक्षितपणे थांबवा, भार कमी करा आणि बॅटरीची शीतकरण यंत्रणा तपासा.",
+            "Reduce speed and inspect motor cooling at a safe stop.":"वेग कमी करा आणि सुरक्षित ठिकाणी थांबून मोटरची शीतकरण यंत्रणा तपासा.",
             "Restore refrigeration; quarantine affected shipment for product-specific quality review.":"शीतकरण पुन्हा सुरू करा आणि उत्पादन-विशिष्ट गुणवत्ता तपासणीसाठी शिपमेंट वेगळे ठेवा.",
+            "Inspect refrigeration now and prepare an intervention before the product-specific limit is crossed.":"शीतकरण यंत्रणा तातडीने तपासा आणि औषधाची मर्यादा ओलांडण्यापूर्वी हस्तक्षेपाची तयारी करा.",
+            "Inspect seals and desiccant; verify packaging integrity.":"सील आणि आर्द्रता शोषक तपासा तसेच पॅकेजिंग सुरक्षित असल्याची खात्री करा.",
+            "Close the door and check temperature recovery.":"कंटेनरचे दार बंद करा आणि तापमान पुन्हा सुरक्षित होत आहे का ते तपासा.",
+            "Secure the shipment and initiate a custody investigation.":"शिपमेंट सुरक्षित करा आणि ताबा-साखळीची चौकशी सुरू करा.",
+            "Inspect fragile pharmaceutical packaging and record the incident.":"नाजूक औषधी पॅकेजिंग तपासा आणि घटनेची नोंद करा.",
+            "Contact driver and verify the deviation and shipment security.":"चालकाशी संपर्क साधा आणि मार्ग बदल तसेच शिपमेंटची सुरक्षा तपासा.",
+            "Dispatch roadside support and protect the cold chain with a vehicle transfer.":"रस्त्यावरील मदत पाठवा आणि वाहन बदलून शीतसाखळी सुरक्षित ठेवा.",
+            "Stop safely and request qualified battery-system inspection.":"वाहन सुरक्षितपणे थांबवा आणि पात्र तंत्रज्ञाकडून बॅटरी प्रणालीची तपासणी करून घ्या.",
+            "Contact the driver and verify ETA and cooling availability.":"चालकाशी संपर्क साधा आणि पोहोचण्याची अंदाजित वेळ तसेच शीतकरणाची उपलब्धता तपासा.",
         }
         return (
             f"{vehicle['vehicle_id']} सध्या {statuses.get(vehicle['vehicle_status'],vehicle['vehicle_status'])} स्थितीत आहे. "
-            f"बॅटरी SOC {battery['soc']:.1f}% आहे आणि बॅटरीचे तापमान {battery['battery_temperature']:.1f}°C आहे. "
-            f"कंटेनरचे तापमान {container['temperature']:.1f}°C आहे; सुरक्षित मर्यादा {container['min_temperature']:.1f} ते {container['max_temperature']:.1f}°C आहे. "
+            f"बॅटरीची चार्ज पातळी {battery['soc']:.1f} टक्के आहे आणि बॅटरीचे तापमान {battery['battery_temperature']:.1f} अंश सेल्सियस आहे. "
+            f"कंटेनरचे तापमान {container['temperature']:.1f} अंश सेल्सियस आहे; सुरक्षित मर्यादा {container['min_temperature']:.1f} ते {container['max_temperature']:.1f} अंश सेल्सियस आहे. "
             f"गंतव्य {delivery['distance_remaining']:.1f} किमी दूर आहे. पोहोचण्याचा अंदाज: {assessments.get(reach['assessment'],reach['assessment'])}. "
-            f"सध्याचा धोका {selected['risk']['risk_score']}/100 ({levels.get(selected['risk']['risk_level'],selected['risk']['risk_level'])}) आहे. "
+            f"सध्याचा धोका शंभर पैकी {selected['risk']['risk_score']} ({levels.get(selected['risk']['risk_level'],selected['risk']['risk_level'])}) आहे. "
             f"शिफारस: {actions.get(selected['risk']['recommended_action'],selected['risk']['recommended_action'])}"
         )
     if language=="hi":

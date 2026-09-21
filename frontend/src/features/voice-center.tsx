@@ -28,13 +28,57 @@ function browserSpeechConstructor(){
  return voiceWindow.SpeechRecognition||voiceWindow.webkitSpeechRecognition||null;
 }
 
+const speechLocales:Record<string,string>={hi:"hi-IN",en:"en-IN",mr:"mr-IN"};
+
+function selectSpeechVoice(voices:SpeechSynthesisVoice[],language:string){
+ const code=language.split("-")[0].toLowerCase(),locale=(speechLocales[code]||language).toLowerCase();
+ const exact=voices.filter(voice=>voice.lang.toLowerCase()===locale);
+ const sameLanguage=voices.filter(voice=>voice.lang.toLowerCase().split("-")[0]===code);
+ const named=voices.filter(voice=>voice.name.toLowerCase().includes(code==="mr"?"marathi":code==="hi"?"hindi":"english"));
+ const hindiFallback=code==="mr"?voices.filter(voice=>voice.lang.toLowerCase().startsWith("hi")||voice.name.toLowerCase().includes("hindi")):[];
+ return exact[0]||sameLanguage[0]||named[0]||hindiFallback[0]||null;
+}
+
+function speechText(text:string,language:string){
+ if(language.split("-")[0]!=="mr")return text;
+ const digitNames:Record<string,string>={"0":"शून्य","1":"एक","2":"दोन","3":"तीन","4":"चार","5":"पाच","6":"सहा","7":"सात","8":"आठ","9":"नऊ"};
+ return text
+  .replace(/PHARMA-EV-(\d{3})/gi,(_,digits:string)=>`फार्मा ई व्ही ${[...digits].map(digit=>digitNames[digit]).join(" ")}`)
+  .replace(/\bSOC\b/gi,"चार्ज पातळी")
+  .replace(/°\s*C\b/gi," अंश सेल्सियस")
+  .replace(/(\d+(?:\.\d+)?)\s*%/g,"$1 टक्के")
+  .replace(/(\d+(?:\.\d+)?)\s*\/\s*100/g,"शंभर पैकी $1")
+  .replace(/\bkm\b/gi,"किलोमीटर")
+  .replace(/Stop safely, reduce load, and inspect the battery cooling system\.?/gi,"वाहन सुरक्षितपणे थांबवा, भार कमी करा आणि बॅटरीची शीतकरण यंत्रणा तपासा.");
+}
+
+function speechChunks(text:string,maxLength=190){
+ const sentences=text.match(/[^.!?।]+[.!?।]?/g)?.map(part=>part.trim()).filter(Boolean)||[text];
+ const chunks:string[]=[];
+ for(const sentence of sentences){
+  if(!chunks.length||chunks[chunks.length-1].length+sentence.length+1>maxLength)chunks.push(sentence);
+  else chunks[chunks.length-1]+=` ${sentence}`;
+ }
+ return chunks;
+}
+
+async function availableSpeechVoices(synth:SpeechSynthesis){
+ const current=synth.getVoices();
+ if(current.length)return current;
+ return await new Promise<SpeechSynthesisVoice[]>(resolve=>{
+  let settled=false;
+  const finish=()=>{if(settled)return;settled=true;synth.removeEventListener("voiceschanged",finish);resolve(synth.getVoices());};
+  synth.addEventListener("voiceschanged",finish,{once:true});window.setTimeout(finish,1200);
+ });
+}
+
 function elapsed(from:string){const normalized=from.endsWith("Z")||/[+-]\d\d:\d\d$/.test(from)?from:`${from}Z`;const seconds=Math.max(0,Math.floor((Date.now()-new Date(normalized).getTime())/1000));return `${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}`;}
 
 export function VoiceCenter(){
  const {data,user,notify}=useMonitor();
  const [runtime,setRuntime]=useState<VoiceRuntime|null>(null),[history,setHistory]=useState<VoiceSession[]>([]),[session,setSession]=useState<VoiceSession|null>(null);
  const [vehicleId,setVehicleId]=useState(data?.fleet[0]?.vehicle.vehicle_id||""),[language,setLanguage]=useState("auto"),[recording,setRecording]=useState(false),[speaking,setSpeaking]=useState(false),[busy,setBusy]=useState(false),[voiceFeedback,setVoiceFeedback]=useState<string|null>(null),[draft,setDraft]=useState(""),[clock,setClock]=useState("00:00"),[detail,setDetail]=useState<VoiceSession|null>(null),[browserSpeechAvailable,setBrowserSpeechAvailable]=useState(false);
- const recorder=useRef<MediaRecorder|null>(null),speechRecognition=useRef<BrowserSpeechRecognition|null>(null),chunks=useRef<Blob[]>([]),stream=useRef<MediaStream|null>(null),activeAudio=useRef<HTMLAudioElement|null>(null),messagesEnd=useRef<HTMLDivElement|null>(null),audioReplies=useRef(new Map<number,{base64:string,mime:string,language:string}>());
+ const recorder=useRef<MediaRecorder|null>(null),speechRecognition=useRef<BrowserSpeechRecognition|null>(null),chunks=useRef<Blob[]>([]),stream=useRef<MediaStream|null>(null),activeAudio=useRef<HTMLAudioElement|null>(null),messagesEnd=useRef<HTMLDivElement|null>(null),audioReplies=useRef(new Map<number,{base64:string,mime:string,language:string}>()),speechRun=useRef(0);
  const canCall=user?.role==="ADMIN"||user?.role==="OPERATOR";
  const microphoneAvailable=Boolean(runtime?.speech_to_text||browserSpeechAvailable);
  const selected=useMemo(()=>data?.fleet.find(item=>item.vehicle.vehicle_id===(session?.vehicle_id||vehicleId)),[data,vehicleId,session?.vehicle_id]);
@@ -43,10 +87,10 @@ export function VoiceCenter(){
  useEffect(()=>{setBrowserSpeechAvailable(Boolean(browserSpeechConstructor()));},[]);
  useEffect(()=>{if(!session||session.status!=="ACTIVE")return;const timer=setInterval(()=>setClock(elapsed(session.started_at)),1000);return()=>clearInterval(timer);},[session]);
  useEffect(()=>{messagesEnd.current?.scrollIntoView({behavior:"smooth"});},[session?.messages?.length]);
- useEffect(()=>()=>{speechRecognition.current?.abort();stream.current?.getTracks().forEach(track=>track.stop());activeAudio.current?.pause();window.speechSynthesis?.cancel();},[]);
+ useEffect(()=>()=>{speechRun.current+=1;speechRecognition.current?.abort();stream.current?.getTracks().forEach(track=>track.stop());activeAudio.current?.pause();window.speechSynthesis?.cancel();},[]);
 
  function playAnswer(messageId:number,text:string,language:string){
-   activeAudio.current?.pause();window.speechSynthesis?.cancel();setSpeaking(true);setVoiceFeedback("Speaking the local AI answer…");
+   speechRun.current+=1;activeAudio.current?.pause();window.speechSynthesis?.cancel();setSpeaking(true);setVoiceFeedback("Speaking the AI answer…");
    const reply=audioReplies.current.get(messageId);
    if(!reply){browserSpeak(text,language);return;}
    const binary=atob(reply.base64),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
@@ -55,7 +99,16 @@ export function VoiceCenter(){
    audio.onended=()=>{URL.revokeObjectURL(url);activeAudio.current=null;setSpeaking(false);setVoiceFeedback(null);};audio.onerror=()=>{URL.revokeObjectURL(url);activeAudio.current=null;browserSpeak(text,reply.language);};
    audio.play().catch(()=>{URL.revokeObjectURL(url);activeAudio.current=null;browserSpeak(text,reply.language);});
  }
- function browserSpeak(text:string,lang:string){if(!window.speechSynthesis){setSpeaking(false);setVoiceFeedback("The answer is ready in the transcript. Press Play answer to hear it.");return;}window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(text);const locales:Record<string,string>={hi:"hi-IN",en:"en-IN",mr:"mr-IN"};utterance.lang=locales[lang]||lang;utterance.rate=.96;utterance.onend=()=>{setSpeaking(false);setVoiceFeedback(null);};utterance.onerror=()=>{setSpeaking(false);setVoiceFeedback("The answer is ready in the transcript. Press Play answer to retry audio.");};window.speechSynthesis.speak(utterance);}
+ async function browserSpeak(text:string,lang:string){
+   if(!window.speechSynthesis){setSpeaking(false);setVoiceFeedback("The answer is ready in the transcript. Press Play answer to hear it.");return;}
+   const synth=window.speechSynthesis,run=++speechRun.current,languageCode=lang.split("-")[0].toLowerCase();synth.cancel();
+   const voices=await availableSpeechVoices(synth);if(run!==speechRun.current)return;
+   const voice=selectSpeechVoice(voices,languageCode),parts=speechChunks(speechText(text,languageCode));
+   if(languageCode==="mr"&&!voice){setSpeaking(false);setVoiceFeedback("No Marathi or Hindi speech voice is available in this browser. Install an Indian language voice or read the transcript.");return;}
+   setVoiceFeedback(languageCode==="mr"?(voice?.lang.toLowerCase().startsWith("mr")?"मराठी उत्तर वाचत आहे…":"हिंदी आवाजाच्या सहाय्याने मराठी उत्तर वाचत आहे…"):"Speaking the AI answer…");
+   const speakPart=(index:number)=>{if(run!==speechRun.current)return;if(index>=parts.length){setSpeaking(false);setVoiceFeedback(null);return;}const utterance=new SpeechSynthesisUtterance(parts[index]);utterance.voice=voice;utterance.lang=voice?.lang||speechLocales[languageCode]||lang;utterance.rate=languageCode==="mr"?.88:.96;utterance.pitch=1;utterance.onend=()=>speakPart(index+1);utterance.onerror=event=>{if(event.error==="canceled"||event.error==="interrupted")return;setSpeaking(false);setVoiceFeedback("Speech playback could not use the selected language voice. The full answer remains in the transcript.");};synth.speak(utterance);};
+   speakPart(0);
+ }
  async function startCall(){setBusy(true);try{const next=await api<VoiceSession>("/voice/sessions",{method:"POST",body:JSON.stringify({vehicle_id:vehicleId||null,language})});setSession(next);setDetail(null);setClock("00:00");notify("Local AI voice session started");}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
  async function finishCall(){if(!session)return;if(recording)stopRecording();setBusy(true);try{const completed=await api<VoiceSession>(`/voice/sessions/${session.id}/end`,{method:"POST"});setSession(completed);setDetail(completed);await load();notify("Call ended and structured notes were saved");}catch(e){notify((e as Error).message);}finally{setBusy(false);}}
  function appendTurn(turn:VoiceTurn){if(turn.audio_base64)audioReplies.current.set(turn.assistant.id,{base64:turn.audio_base64,mime:turn.audio_mime||"audio/wav",language:turn.spoken_language});setSession(current=>current?{...current,vehicle_id:turn.vehicle_id,messages:[...(current.messages||[]),turn.operator,turn.assistant]}:current);setVoiceFeedback("Answer ready. Playing it now…");window.setTimeout(()=>playAnswer(turn.assistant.id,turn.assistant.text,turn.spoken_language),80);}
@@ -69,9 +122,9 @@ export function VoiceCenter(){
      if(!runtime?.speech_to_text){
        const SpeechRecognition=browserSpeechConstructor();
        if(!SpeechRecognition)throw new Error("This browser does not provide speech recognition. Use Chrome or Edge, or type your question below.");
-       const recognition=new SpeechRecognition(),locales:Record<string,string>={hi:"hi-IN",en:"en-IN",mr:"mr-IN"};
+       const recognition=new SpeechRecognition();
        let finalText="",recognitionFailed=false,recognitionStarted=false,startupTimedOut=false,startupTimer:number|undefined;
-       recognition.lang=locales[language]||navigator.language||"en-IN";recognition.continuous=false;recognition.interimResults=true;recognition.maxAlternatives=1;
+       recognition.lang=speechLocales[language]||navigator.language||"en-IN";recognition.continuous=false;recognition.interimResults=true;recognition.maxAlternatives=1;
        recognition.onstart=()=>{recognitionStarted=true;if(startupTimer)window.clearTimeout(startupTimer);setRecording(true);setVoiceFeedback("Listening through the browser microphone…");};
        recognition.onresult=event=>{let heard="";for(let i=event.resultIndex;i<event.results.length;i++){const text=event.results[i][0]?.transcript||"";heard+=text;if(event.results[i].isFinal)finalText+=text;}if(heard.trim())setVoiceFeedback(`Heard: ${heard.trim()}`);};
        recognition.onerror=event=>{if(startupTimer)window.clearTimeout(startupTimer);if(startupTimedOut)return;recognitionFailed=true;const denied=event.error==="not-allowed"||event.error==="service-not-allowed";const message=denied?"Microphone permission was denied. Allow microphone access, or type your question below.":"Browser speech recognition could not hear a complete question. Please try again.";setRecording(false);setVoiceFeedback(message);notify(message);};
