@@ -11,16 +11,20 @@ def serialize_alert(alert):
 
 def vehicle_snapshot(db, vehicle_id):
     """Load one current vehicle view without scanning the rest of the fleet."""
-    vehicle=db.get(Vehicle,vehicle_id)
-    if not vehicle:
+    row=db.execute(
+        select(Vehicle,TelemetryHistory,Delivery,Route,Container)
+        .join(TelemetryHistory,TelemetryHistory.vehicle_id==Vehicle.id)
+        .join(Delivery,Delivery.vehicle_id==Vehicle.id)
+        .join(Route,Route.id==Delivery.route_id)
+        .join(Container,Container.id==Delivery.container_id)
+        .where(Vehicle.id==vehicle_id)
+        .order_by(TelemetryHistory.timestamp.desc(),TelemetryHistory.id.desc())
+        .limit(1)
+    ).first()
+    if not row:
         return None
-    record=db.scalar(select(TelemetryHistory).where(TelemetryHistory.vehicle_id==vehicle.id).order_by(TelemetryHistory.timestamp.desc(),TelemetryHistory.id.desc()).limit(1))
-    if not record:
-        return None
+    vehicle,record,delivery,route,container=row
     snapshot=dict(record.snapshot)
-    delivery=db.scalar(select(Delivery).where(Delivery.vehicle_id==vehicle.id))
-    route=db.get(Route,delivery.route_id)
-    container=db.get(Container,delivery.container_id)
     snapshot["delivery"]={**snapshot["delivery"],"planned_route":route.planned_route,"actual_route":vehicle.state.get("actual_route",[]),"route_provider":route.provider,"route_duration_minutes":route.duration_minutes}
     snapshot["container"]={**snapshot["container"],"min_temperature":container.min_temperature,"max_temperature":container.max_temperature}
     snapshot["scenario"]=vehicle.scenario
