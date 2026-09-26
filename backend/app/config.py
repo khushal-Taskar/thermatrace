@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = "alerts@thermatrace.local"
     smtp_starttls: bool = True
+    smtp_use_ssl: bool = False
     model_bundle_path: str = "data/models/validated-risk-model.joblib"
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:3b"

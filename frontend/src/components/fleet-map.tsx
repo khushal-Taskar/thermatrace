@@ -5,13 +5,13 @@ import {Maximize2} from "lucide-react";
 import {CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap} from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type {Point, Snapshot} from "@/types";
+import type {Point, RescueMission, Snapshot} from "@/types";
 import {useMonitor} from "@/hooks/use-monitor";
 
 const colors = {NORMAL: "#17826e", WARNING: "#d79b28", HIGH: "#df8f20", CRITICAL: "#d95752"};
 const PUNE_OPERATIONS_BOUNDS = L.latLngBounds([18.05, 72.95], [19.15, 74.55]);
 
-function MapController({fleet, focus, fitSignal}: {fleet: Snapshot[]; focus?: string; fitSignal: number}) {
+function MapController({fleet, missions, focus, fitSignal}: {fleet: Snapshot[]; missions: RescueMission[]; focus?: string; fitSignal: number}) {
   const map = useMap();
   const latestFleet = useRef(fleet);
   latestFleet.current = fleet;
@@ -36,9 +36,9 @@ function MapController({fleet, focus, fitSignal}: {fleet: Snapshot[]; focus?: st
       map.setView([vehicle.latitude, vehicle.longitude], 15, {animate: true});
       return;
     }
-    const points = snapshots.flatMap((snapshot) => snapshot.delivery.planned_route);
+    const points = [...snapshots.flatMap((snapshot) => snapshot.delivery.planned_route), ...missions.flatMap(mission => [...mission.pickup_route, ...mission.onward_route])];
     if (points.length) map.fitBounds(L.latLngBounds(points), {padding: [34, 34], maxZoom: 13, animate: true});
-  }, [map, focus, fitSignal]);
+  }, [map, focus, fitSignal, missions.length]);
 
   useEffect(() => {
     if (!focus || focus === "ALL" || fleet.length !== 1) return;
@@ -47,6 +47,32 @@ function MapController({fleet, focus, fitSignal}: {fleet: Snapshot[]; focus?: st
   }, [map, focus, fleet]);
 
   return null;
+}
+
+function RescueMarker({mission}: {mission: RescueMission}) {
+  const markerRef = useRef<L.Marker | null>(null);
+  const initialPosition = useRef<Point>(mission.position);
+  const icon = useMemo(() => L.divIcon({
+    className: "rescue-pin",
+    html: '<span class="rescue-pin-core">R</span>',
+    iconSize: [32, 32], iconAnchor: [16, 16],
+  }), []);
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (!marker) return;
+    const from = marker.getLatLng(), to = L.latLng(mission.position[0], mission.position[1]);
+    if (from.distanceTo(to) > 5000) { marker.setLatLng(to); return; }
+    const start = performance.now();
+    let frame = 0;
+    const animate = (now: number) => {
+      const fraction = Math.min(1, (now - start) / 2800);
+      marker.setLatLng([from.lat + (to.lat-from.lat)*fraction, from.lng + (to.lng-from.lng)*fraction]);
+      if (fraction < 1) frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [mission.position]);
+  return <Marker ref={markerRef} position={initialPosition.current} icon={icon}><Popup><strong>{mission.replacement_vehicle_id}</strong><p>{mission.status.replaceAll("_", " ")} · {mission.shipment_id}<br/>{mission.speed} km/h · {mission.distance_remaining} km remaining</p></Popup></Marker>;
 }
 
 function AnimatedVehicleMarker({snapshot, onSelect}: {snapshot: Snapshot; onSelect: (id: string) => void}) {
@@ -86,10 +112,10 @@ function AnimatedVehicleMarker({snapshot, onSelect}: {snapshot: Snapshot; onSele
   return <Marker ref={markerRef} position={initialPosition.current} icon={icon}><Popup><strong>{id} · {snapshot.vehicle.vehicle_name}</strong><p>{snapshot.container.medicine_name}<br/>{snapshot.vehicle.speed} km/h · SOC {snapshot.battery.soc.toFixed(1)}%<br/>Risk {snapshot.risk.risk_score}/100<br/>{snapshot.delivery.destination}</p><button className="map-detail" onClick={() => onSelect(id)}>Open vehicle details →</button></Popup></Marker>;
 }
 
-export default function FleetMap({fleet, focus}: {fleet: Snapshot[]; focus?: string}) {
+export default function FleetMap({fleet, focus, missions=[]}: {fleet: Snapshot[]; focus?: string; missions?: RescueMission[]}) {
   const {select} = useMonitor();
   const [failed, setFailed] = useState(false);
   const [fitSignal, setFitSignal] = useState(0);
 
-  return <div className="map-wrap"><MapContainer center={[18.557, 73.845]} zoom={12} minZoom={10} maxZoom={18} maxBounds={PUNE_OPERATIONS_BOUNDS} maxBoundsViscosity={1} scrollWheelZoom className="fleet-map"><MapController fleet={fleet} focus={focus} fitSignal={fitSignal}/><TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' minZoom={10} maxZoom={19} keepBuffer={4} updateWhenZooming={false} eventHandlers={{tileerror: () => setFailed(true), load: () => setFailed(false)}}/>{fleet.map((snapshot) => {const id=snapshot.vehicle.vehicle_id,color=colors[snapshot.risk.risk_level],routeIndex=Math.min(snapshot.delivery.planned_route.length-1,Math.round(snapshot.delivery.delivery_progress/100*(snapshot.delivery.planned_route.length-1)));return <Fragment key={id}><Polyline positions={snapshot.delivery.planned_route} pathOptions={{color:"#71968b",weight:3,opacity:.65,dashArray:"7 7"}}/><Polyline positions={snapshot.delivery.actual_route} pathOptions={{color,weight:4,opacity:.9}}/><CircleMarker center={snapshot.delivery.planned_route[0]} radius={4} pathOptions={{color:"#17826e",fillOpacity:1}}/><CircleMarker center={snapshot.delivery.planned_route.at(-1)!} radius={5} pathOptions={{color:"#233f38",fillOpacity:1}}/><AnimatedVehicleMarker snapshot={snapshot} onSelect={select}/>{snapshot.delivery.route_deviation_distance>.5&&<Polyline positions={[snapshot.delivery.current_location,snapshot.delivery.planned_route[routeIndex]]} pathOptions={{color:"#d95752",dashArray:"4 4",weight:2}}/>}</Fragment>;})}</MapContainer><button className="map-fit-control" onClick={() => setFitSignal((value) => value + 1)} title="Fit all live routes" aria-label="Fit all live routes"><Maximize2 size={15}/><span>Fit fleet</span></button><div className="map-legend"><span><i style={{background:"#17826e"}}/>Healthy</span><span><i style={{background:"#df8f20"}}/>Attention</span><span><i style={{background:"#d95752"}}/>Critical</span><span className="route-key">┄ Planned route</span></div>{failed&&<div className="tile-notice">The free OpenStreetMap basemap could not load. Live routes and positions are still available.</div>}<span className="map-region">{focus&&focus!=="ALL"?"FOLLOWING LIVE VEHICLE":"PUNE METROPOLITAN REGION"}</span></div>;
+  return <div className="map-wrap"><MapContainer center={[18.557, 73.845]} zoom={12} minZoom={10} maxZoom={18} maxBounds={PUNE_OPERATIONS_BOUNDS} maxBoundsViscosity={1} scrollWheelZoom className="fleet-map"><MapController fleet={fleet} missions={missions} focus={focus} fitSignal={fitSignal}/><TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' minZoom={10} maxZoom={19} keepBuffer={4} updateWhenZooming={false} eventHandlers={{tileerror: () => setFailed(true), load: () => setFailed(false)}}/>{fleet.map((snapshot) => {const id=snapshot.vehicle.vehicle_id,color=colors[snapshot.risk.risk_level],routeIndex=Math.min(snapshot.delivery.planned_route.length-1,Math.round(snapshot.delivery.delivery_progress/100*(snapshot.delivery.planned_route.length-1)));return <Fragment key={id}><Polyline positions={snapshot.delivery.planned_route} pathOptions={{color:"#71968b",weight:3,opacity:.65,dashArray:"7 7"}}/><Polyline positions={snapshot.delivery.actual_route} pathOptions={{color,weight:4,opacity:.9}}/><CircleMarker center={snapshot.delivery.planned_route[0]} radius={4} pathOptions={{color:"#17826e",fillOpacity:1}}/><CircleMarker center={snapshot.delivery.planned_route.at(-1)!} radius={5} pathOptions={{color:"#233f38",fillOpacity:1}}/><AnimatedVehicleMarker snapshot={snapshot} onSelect={select}/>{snapshot.delivery.route_deviation_distance>.5&&<Polyline positions={[snapshot.delivery.current_location,snapshot.delivery.planned_route[routeIndex]]} pathOptions={{color:"#d95752",dashArray:"4 4",weight:2}}/>}</Fragment>;})}{missions.map(mission=><Fragment key={mission.id}><Polyline positions={mission.pickup_route} pathOptions={{color:"#2b77bb",weight:4,opacity:.9,dashArray:mission.status==="TO_PICKUP"?undefined:"5 7"}}/><Polyline positions={mission.onward_route} pathOptions={{color:"#6754bc",weight:4,opacity:.8,dashArray:mission.status==="TO_DESTINATION"?undefined:"7 7"}}/><CircleMarker center={mission.breakdown_location} radius={7} pathOptions={{color:"#d95752",fillColor:"#fff",fillOpacity:1,weight:3}}/><RescueMarker mission={mission}/></Fragment>)}</MapContainer><button className="map-fit-control" onClick={() => setFitSignal((value) => value + 1)} title="Fit all live routes" aria-label="Fit all live routes"><Maximize2 size={15}/><span>Fit fleet</span></button><div className="map-legend"><span><i style={{background:"#17826e"}}/>Healthy</span><span><i style={{background:"#df8f20"}}/>Attention</span><span><i style={{background:"#d95752"}}/>Critical</span>{missions.length>0&&<span><i style={{background:"#2b77bb"}}/>Rescue</span>}<span className="route-key">┄ Planned route</span></div>{failed&&<div className="tile-notice">The free OpenStreetMap basemap could not load. Live routes and positions are still available.</div>}<span className="map-region">{focus&&focus!=="ALL"?"FOLLOWING LIVE VEHICLE":"PUNE METROPOLITAN REGION"}</span></div>;
 }

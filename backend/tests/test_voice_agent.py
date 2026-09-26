@@ -29,10 +29,10 @@ def test_voice_session_text_turn_and_structured_notes(authenticated,monkeypatch)
     assert note["notes"]["raw_audio_retained"] is False
     assert note["notes"]["key_facts"]
     detail=authenticated.get(f"/api/voice/sessions/{session_id}").json()
-    assert [message["role"] for message in detail["messages"]]==["USER","ASSISTANT"]
+    assert [message["role"] for message in detail["messages"]]==["ASSISTANT","USER","ASSISTANT"]
     with SessionLocal() as db:
         assert db.get(VoiceSession,session_id).ended_at is not None
-        assert len(list(db.query(VoiceMessage).filter_by(session_id=session_id)))==2
+        assert len(list(db.query(VoiceMessage).filter_by(session_id=session_id)))==3
 
 
 def test_voice_audio_accepts_browser_codec_content_type(authenticated,monkeypatch):

@@ -1,6 +1,6 @@
 # Database Schema
 
-Alembic migrations through `0002_voice_agent` support populated SQLite databases and fresh SQLite/PostgreSQL schemas. JSON snapshots preserve full telemetry while indexed normalized tables support audit and targeted queries.
+Alembic migrations through `0003_rescue_dispatch` support populated SQLite databases and fresh SQLite/PostgreSQL schemas. JSON snapshots preserve full telemetry while indexed normalized tables support audit and targeted queries.
 
 ```mermaid
 erDiagram

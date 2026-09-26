@@ -226,3 +226,39 @@ class VoiceMessage(Base):
     language: Mapped[str] = mapped_column(String(20), default="en")
     source: Mapped[str] = mapped_column(String(30), default="VOICE")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RescueMission(Base):
+    __tablename__ = "rescue_missions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    incident_vehicle_id: Mapped[str] = mapped_column(ForeignKey("vehicles.id"), index=True)
+    replacement_vehicle_id: Mapped[str] = mapped_column(String(40))
+    shipment_id: Mapped[str] = mapped_column(String(40), index=True)
+    source: Mapped[str] = mapped_column(String(150))
+    destination: Mapped[str] = mapped_column(String(150))
+    breakdown_location: Mapped[list] = mapped_column(JSON)
+    pickup_route: Mapped[list] = mapped_column(JSON)
+    onward_route: Mapped[list] = mapped_column(JSON)
+    route_provider: Mapped[str] = mapped_column(String(30), default="STORED_ROUTE")
+    position: Mapped[list] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(30), default="TO_PICKUP", index=True)
+    progress: Mapped[float] = mapped_column(Float, default=0)
+    speed: Mapped[float] = mapped_column(Float, default=0)
+    transfer_ticks: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    transferred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DispatchMessage(Base):
+    __tablename__ = "dispatch_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    point: Mapped[str] = mapped_column(String(1), index=True)
+    incident_vehicle_id: Mapped[str] = mapped_column(ForeignKey("vehicles.id"), index=True)
+    mission_id: Mapped[int | None] = mapped_column(ForeignKey("rescue_missions.id"), nullable=True)
+    voice_session_id: Mapped[int | None] = mapped_column(ForeignKey("voice_sessions.id"), nullable=True)
+    sender: Mapped[str] = mapped_column(String(60), default="AI_DISPATCH")
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="DELIVERED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

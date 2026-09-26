@@ -1,7 +1,8 @@
 from datetime import timedelta, timezone
 import math
 from sqlalchemy import select, func
-from ..models import Vehicle, Delivery, Route, Container, TelemetryHistory, Alert, SystemSettings, utcnow
+from ..models import Vehicle, Delivery, Route, Container, TelemetryHistory, Alert, SystemSettings, RescueMission, DispatchMessage, utcnow
+from .rescue_dispatch import serialize_mission, serialize_message
 
 
 def serialize_alert(alert):
@@ -30,7 +31,9 @@ def overview(db):
     alerts=db.scalars(select(Alert).order_by(Alert.timestamp.desc(),Alert.id.desc()).limit(200)).all()
     unacknowledged=[a for a in alerts if a.active and not a.acknowledged]
     active=[s for s in fleet if s["delivery"]["delivery_status"] in ["IN_TRANSIT","DELAYED"]]
-    return {"fleet":fleet,"alerts":[serialize_alert(a) for a in alerts],"timestamp":utcnow().isoformat(),"simulation_paused":db.get(SystemSettings,1).simulation_paused,"metrics":{"active_vehicles":sum(s["vehicle"]["vehicle_status"]=="RUNNING" for s in fleet),"active_deliveries":len(active),"critical_alerts":sum(a.severity=="CRITICAL" for a in unacknowledged),"average_soc":round(sum(s["battery"]["soc"] for s in fleet)/max(1,len(fleet)),1),"safe_containers":sum(s["container"]["min_temperature"]<=s["container"]["temperature"]<=s["container"]["max_temperature"] for s in fleet),"total_containers":len(fleet),"high_risk_shipments":sum(s["risk"]["risk_score"]>60 for s in fleet),"on_time_percentage":round(sum(s["delivery"]["delay_minutes"]<=10 and s["delivery"]["delivery_status"]!="FAILED" for s in fleet)/max(1,len(fleet))*100),"total_vehicles":len(fleet),"unacknowledged_alerts":len(unacknowledged)}}
+    missions=db.scalars(select(RescueMission).order_by(RescueMission.id.desc()).limit(20)).all()
+    messages=db.scalars(select(DispatchMessage).order_by(DispatchMessage.id.desc()).limit(100)).all()
+    return {"fleet":fleet,"alerts":[serialize_alert(a) for a in alerts],"rescue_missions":[serialize_mission(item) for item in missions],"dispatch_messages":[serialize_message(item) for item in reversed(messages)],"timestamp":utcnow().isoformat(),"simulation_paused":db.get(SystemSettings,1).simulation_paused,"metrics":{"active_vehicles":sum(s["vehicle"]["vehicle_status"]=="RUNNING" for s in fleet),"active_deliveries":len(active),"critical_alerts":sum(a.severity=="CRITICAL" for a in unacknowledged),"average_soc":round(sum(s["battery"]["soc"] for s in fleet)/max(1,len(fleet)),1),"safe_containers":sum(s["container"]["min_temperature"]<=s["container"]["temperature"]<=s["container"]["max_temperature"] for s in fleet),"total_containers":len(fleet),"high_risk_shipments":sum(s["risk"]["risk_score"]>60 for s in fleet),"on_time_percentage":round(sum(s["delivery"]["delay_minutes"]<=10 and s["delivery"]["delivery_status"]!="FAILED" for s in fleet)/max(1,len(fleet))*100),"total_vehicles":len(fleet),"unacknowledged_alerts":len(unacknowledged)}}
 
 
 def history(db, vehicle_id=None, hours=1):

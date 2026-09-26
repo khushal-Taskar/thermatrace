@@ -1,5 +1,6 @@
 from enum import Enum
-from pydantic import BaseModel, Field, model_validator
+import re
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Scenario(str, Enum):
@@ -97,6 +98,22 @@ class NotificationPreferences(BaseModel):
     notification_email: str | None = Field(default=None, max_length=200)
     email_notifications: bool
 
+    @field_validator("notification_email")
+    @classmethod
+    def validate_notification_email(cls, value):
+        if value is None:
+            return value
+        value = value.strip().lower()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
+            raise ValueError("Enter a valid notification email address")
+        return value
+
+    @model_validator(mode="after")
+    def require_destination_when_enabled(self):
+        if self.email_notifications and not self.notification_email:
+            raise ValueError("A notification email address is required")
+        return self
+
 
 class VoiceSessionCreate(BaseModel):
     vehicle_id: str | None = Field(default=None, pattern=r"^PHARMA-EV-\d{3}$")
@@ -106,3 +123,13 @@ class VoiceSessionCreate(BaseModel):
 class VoiceTextTurn(BaseModel):
     text: str = Field(min_length=2, max_length=1000)
     language: str = Field(default="auto", pattern="^(auto|hi|en|mr)$")
+
+
+class DispatchMessageCreate(BaseModel):
+    point: str = Field(pattern="^(A|B)$")
+    vehicle_id: str = Field(pattern=r"^PHARMA-EV-\d{3}$")
+    text: str = Field(min_length=2, max_length=1000)
+
+
+class RescueStart(BaseModel):
+    vehicle_id: str = Field(pattern=r"^PHARMA-EV-\d{3}$")

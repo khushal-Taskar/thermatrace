@@ -3,6 +3,7 @@ from datetime import timedelta
 from sqlalchemy import select, delete
 from ..models import Vehicle, Container, Delivery, Route, MedicineProfile, TelemetryHistory, BatteryTelemetry, VehicleTelemetry, ContainerTelemetry, Alert, RiskEvent, SystemSettings, utcnow
 from ..services.cold_chain import cold_chain_metrics, profile_or_default
+from ..services.rescue_dispatch import advance_missions
 
 
 def smooth(current, target, rate=.12):
@@ -52,7 +53,7 @@ class Simulator:
             speed_target=0
         elif scenario=="DELIVERY_DELAY":
             speed_target=18+4*math.sin(t*.45)
-        speed=smooth(s.get("speed", speed_target), speed_target, .2)
+        speed=0 if scenario in ["VEHICLE_FAILURE", "BMS_FAULT"] else smooth(s.get("speed", speed_target), speed_target, .2)
         if speed<.5:
             speed=0
         # Real-time distance traveled; no artificial jumps or automatic route resets.
@@ -99,7 +100,7 @@ class Simulator:
         if not trace or trace[-1]!=position:
             trace.append(position)
         d["actual_route"]=trace[-240:]
-        vehicle.state={"progress":progress,"speed":speed,"soc":soc,"current":current,"battery_temp":battery_temp,"motor_temp":motor_temp,"temp":temp,"humidity":humidity,"deviation":deviation,"delay":delay,"odometer":v["odometer"],"actual_route":trace[-240:],"previous_scenario":scenario,"temperature_trend_c_per_minute":cold_metrics["temperature_trend_c_per_minute"],"excursion_duration_minutes":cold_metrics["excursion_duration_minutes"]}
+        vehicle.state={"progress":progress,"speed":speed,"soc":soc,"current":current,"battery_temp":battery_temp,"motor_temp":motor_temp,"temp":temp,"humidity":humidity,"deviation":deviation,"delay":delay,"odometer":v["odometer"],"actual_route":trace[-240:],"previous_scenario":scenario,"temperature_trend_c_per_minute":cold_metrics["temperature_trend_c_per_minute"],"excursion_duration_minutes":cold_metrics["excursion_duration_minutes"],"reset_at":s.get("reset_at")}
         snapshot={"vehicle":v,"battery":b,"container":c,"delivery":d,"timestamp":timestamp,"scenario":scenario}
         snapshot["risk"]=self.risk_engine.evaluate(snapshot)
         return snapshot
@@ -151,6 +152,7 @@ class Simulator:
             profile=db.get(MedicineProfile,container.medicine_profile_id) if container.medicine_profile_id else None
             snapshot=self.advance(vehicle,container,delivery,db.get(Route,delivery.route_id),now,warm_start=not vehicle.state,profile=profile)
             self.persist(db,snapshot,now)
+        advance_missions(db,self.interval)
         if self.ticks%1200==0:
             cutoff=now-timedelta(days=30)
             for model in [TelemetryHistory,VehicleTelemetry,BatteryTelemetry,ContainerTelemetry,RiskEvent]:

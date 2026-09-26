@@ -313,7 +313,7 @@ def generate_answer(db, session: VoiceSession, question: str, language: str) -> 
         response=httpx.post(
             f"{settings.ollama_base_url.rstrip('/')}/api/chat",
             json={"model":settings.ollama_model,"messages":messages,"stream":False,"keep_alive":"30m","options":{"temperature":0.05,"num_predict":280 if language not in {"hi","en"} else 180,"num_ctx":2048}},
-            timeout=45,
+            timeout=4,
         )
         response.raise_for_status()
         answer=response.json().get("message",{}).get("content","").strip()

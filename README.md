@@ -8,7 +8,7 @@ A complete local software simulation for a final-year engineering project. Therm
 
 - Web application: **https://thermatrace-pharma.vercel.app**
 - API health: **https://thermatrace-api.onrender.com/api/health**
-- Demo admin: `admin@thermatrace.local` / `khushal@123`
+- Cloud demo admin: `admin@thermatrace.local` / the password configured during deployment. The local seeded default is shown in the login screen.
 
 The public demo uses Vercel, Render and Supabase free tiers. The Render service can sleep after inactivity, so the first request may take about a minute while it wakes. The local setup below remains the full zero-cost option and includes the local voice-model runtime.
 
@@ -20,7 +20,7 @@ This is an educational simulation. Its generated medicine labels, drivers, route
 
 ## Features
 
-- Thirteen working sections: Dashboard, Fleet, Live Tracking, Vehicles, Battery / BMS, Containers, Deliveries, AI Risk Center, AI Voice Center, Alerts, Analytics, Reports, Settings.
+- Fourteen working sections: Dashboard, Fleet, Live Tracking, Vehicles, Battery / BMS, Containers, Deliveries, Dispatch, AI Risk Center, AI Voice Center, Alerts, Analytics, Reports, Settings.
 - Five populated EVs (`PHARMA-EV-001` through `005`) transporting different medicine shipments around Pune.
 - Correlated telemetry every three seconds: GPS, motor, speed, SOC/SOH, current, voltage, battery temperature, container conditions, delivery progress, and risk.
 - FastAPI native WebSocket updates with authentication, automatic reconnection, and one-time connection tickets.
@@ -29,13 +29,14 @@ This is an educational simulation. Its generated medicine labels, drivers, route
 - Five medicine-specific cold-chain profiles with configurable bands, warning margins, excursion budgets, forecast horizons, handling notes, live excursion duration, remaining-safe-time estimation, and predictive alerts.
 - Rule-based safety detection, trained Isolation Forest anomaly detection, and trained Random Forest risk prediction across 16 signals. Evidence, thresholds, recommended actions, model metrics, and counterfactual feature sensitivities are visible.
 - Local operations assistant with intent recognition, current and historical analytics, and one-click PDF report actions; no paid LLM required.
-- Local AI Voice Center with Hindi, English and Marathi microphone conversations, live database grounding, destination reachability, spoken replies, transcripts, and automatic closing notes. Qwen and Faster Whisper run on the same computer; Piper provides Hindi/English speech and the browser voice provides Marathi when installed. Raw recordings are deleted after transcription.
+- AI Voice Center with Hindi, English and Marathi turns, live database grounding, low-latency deterministic breakdown/dispatch intents, spoken replies, hands-free turn-taking, transcripts, and automatic closing notes. Fast browser recognition is the default when available; private local Faster Whisper can be selected on the local installation. Piper provides Hindi/English speech locally, while Marathi can use a free online neural voice. Raw recordings are not retained by ThermaTrace.
+- Dispatch & recovery page with separate persistent Point A and Point B in-app chats, voice-triggered messages, read status, a simulated replacement vehicle, live recovery progress, OSRM road-route refinement and moving map marker. Dispatch is an in-app simulation; it does not send SMS or email to real facilities.
 - Persistent incident episodes, acknowledgement audit, recovery history, and CSV export.
 - Twelve historical signal charts, including temperature forecast, excursion duration, remaining safe time and battery current, with configurable ranges and CSV export.
 - Six database-generated report types with exact full-range statistics, downloadable JSON, printable preview, and direct server-generated PDF files.
 - Light/dark mode, responsive navigation, restrained motion, reduced-motion support, detail panels, loading, empty, and error states.
 - ADMIN / OPERATOR / VIEWER accounts, hashed passwords, eight-hour HTTP-only sessions, server-enforced permissions, origin checks, and protected control routes.
-- Foreground browser notifications plus optional SMTP email delivery for deduplicated HIGH / CRITICAL alerts.
+- Foreground browser notifications plus optional SMTP email delivery for deduplicated HIGH / CRITICAL alerts, failed-send retry, per-user destinations and a Settings-page test email.
 - Optional validated MQTT device registry and ingest adapter; sensor records are explicitly tagged `synthetic=false`.
 - SQLite by default, PostgreSQL driver and Docker Compose option, plus versioned Alembic migrations.
 
@@ -52,7 +53,10 @@ flowchart LR
     API --> PDF[ReportLab PDF]
     API --> Notify[Browser / optional SMTP]
     API --> Next[Next.js / React / TypeScript]
-    Voice[Microphone → Faster Whisper → Qwen → Piper] --> API
+    Voice[Browser speech or Whisper → grounded intents → deferred speech] --> API
+    API --> Dispatch[Point A/B in-app dispatch]
+    Dispatch --> Rescue[Virtual replacement mission]
+    Rescue --> DB
     WS --> Next
     Next --> UI[Leaflet / Recharts control center]
 ```
@@ -172,9 +176,10 @@ Change the development password before any shared deployment. Supabase or anothe
 6. Ask the assistant “Which shipment is highest risk?” or “Why is Vehicle V03 critical?”.
 7. Explore Analytics and generate Reports. Download CSV/JSON, preview, print, or create the PDF directly.
 8. **Restore normal conditions** resets a vehicle's demo SOC/delay and removes the chosen scenario target. Thermal values cool gradually. **Restart all demo journeys** restores the initial scenario distribution and positions without deleting telemetry or incidents.
-9. Open **AI Voice Center**, select a vehicle and Hindi, English or Marathi, start a call, and speak naturally. End the call to generate a persisted summary, risk list, telemetry facts, follow-up actions, and transcript.
+9. Open **AI Voice Center**, select a vehicle and Hindi, English or Marathi, and start a call. The agent greets you. Say a breakdown report and request Point A/B dispatch, or type the same command. Fast browser recognition may use the browser provider's speech service; select Local Whisper for private server-side transcription. End the call to generate persisted notes and transcript.
+10. Open **Dispatch** to see the separate Point A/B message records and replacement route. The demo vehicle moves at an accelerated 20× clock, while the displayed road ETA is unaccelerated. Use **Restart all demo journeys** to cancel active recovery simulations and restore the seeded fleet state.
 
-Journeys reach their destinations and become delivered; they do not secretly loop. Restart them explicitly for another presentation. Settings can pause automatic advancement; an explicit scenario/reset/settings action can still recalculate a tick. SOH is fixed per vehicle during this short demonstration because realistic degradation does not oscillate every few seconds.
+The simulator recycles completed demo routes to keep a continuously populated map; use **Restart all demo journeys** to restore seed SOC and positions for a presentation. It is an educational simulation, not a physical fleet scheduler. Settings can pause automatic advancement; an explicit scenario/reset/settings action can still recalculate a tick. SOH is fixed per vehicle during this short demonstration because realistic degradation does not oscillate every few seconds.
 
 Seed checkpoints are converted to OSRM road-following geometry and stored in the database. The five included demo routes have been refreshed from the public OSRM service; the stored route remains available if that service is offline. Route deviation is the geometric distance to the nearest planned road segment. ETA uses remaining distance and current speed with a fallback speed while stopped. Delay and unexpected-stop rules are explainable demonstration heuristics.
 
@@ -186,6 +191,10 @@ The final priority score combines rule safety floors, model prediction, anomaly 
 
 The assistant is a replaceable local service interface (`app/ai/assistant.py`). It recognizes supported intents, queries current and historical ORM-derived telemetry, and returns validated UI actions for direct PDF reports. It never executes generated SQL/code. An optional future LLM can translate questions into validated intents while preserving this query layer.
 
+The voice assistant also has deterministic operational answers for medicine, batch, current/predicted container temperature, product range, humidity, excursion duration, remaining-safe-time estimate, door/tamper/shock state, vehicle/BMS condition, breakdown recording and Point A/Point B rescue dispatch. These answers come from the current database snapshot, and safety-time text remains an estimate rather than a product-release decision.
+
+To activate direct alert email, configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_FROM` in `backend/.env` or the backend host's secret environment. Use `SMTP_STARTTLS=true` for port 587, or `SMTP_USE_SSL=true` for implicit TLS (commonly port 465). Then open **Settings → Alert delivery**, save the recipient address, enable HIGH / CRITICAL email, and press **Send test**. SMTP credentials are deliberately never stored in the repository.
+
 ## API endpoints
 
 Interactive schema is available at `/docs`. All operational endpoints require the session cookie.
@@ -195,7 +204,7 @@ Interactive schema is available at `/docs`. All operational endpoints require th
 | GET | `/api/health` | Public health and disclosed model metadata |
 | POST | `/api/auth/login` | Authenticate and set HTTP-only session cookie |
 | GET / POST | `/api/auth/me`, `/api/auth/logout` | Inspect / revoke session |
-| GET | `/api/overview` | Fleet, metrics, incident records |
+| GET | `/api/overview` | Fleet, metrics, incidents, rescue missions and dispatch messages |
 | GET | `/api/vehicles`, `/api/vehicles/{id}` | Fleet / full vehicle snapshot |
 | GET | `/api/containers`, `/api/deliveries` | Current container / delivery records |
 | GET | `/api/risk` | Ranked snapshots and model metadata |
@@ -210,13 +219,18 @@ Interactive schema is available at `/docs`. All operational endpoints require th
 | POST | `/api/integrations/mqtt/test-ingest` | Validate the real-sensor ingest path |
 | POST | `/api/routes/refresh` | Refresh all road routes from OSRM |
 | GET / PUT | `/api/notifications/status`, `/api/me/notifications` | Channels and user email preferences |
+| POST | `/api/notifications/test` | Send a test message to the signed-in user's alert address |
 | GET | `/api/ai/model-validation` | Model provenance, schema, and retraining command |
 | POST | `/api/assistant` | `{ "question": "Which shipment is highest risk?" }` |
 | GET | `/api/voice/status` | Local Ollama, Whisper, Piper, and voice-model readiness |
 | GET / POST | `/api/voice/sessions` | Review calls / start an Admin or Operator call |
-| POST | `/api/voice/sessions/{id}/turn` | Transcribe a microphone recording and return grounded local-AI speech |
-| POST | `/api/voice/sessions/{id}/message` | Typed fallback through the same grounded local agent |
+| POST | `/api/voice/sessions/{id}/turn?fast=true` | Transcribe a microphone recording and return grounded answer text immediately |
+| POST | `/api/voice/sessions/{id}/message?fast=true` | Typed or browser-recognized fast voice turn |
+| GET | `/api/voice/messages/{id}/audio` | Fetch the spoken answer separately from the fast text response |
 | POST | `/api/voice/sessions/{id}/end` | Close a call and persist structured notes |
+| GET / POST | `/api/dispatch/messages` | Point A/B in-app inboxes and manual message |
+| POST | `/api/dispatch/messages/{id}/read` | Record inbox read state |
+| POST | `/api/dispatch/rescue` | Start one simulated replacement mission for a stopped shipment |
 | GET | `/api/simulation/scenarios` | Available scenarios |
 | POST | `/api/simulation/scenario` | `{ "vehicle_id": "PHARMA-EV-001", "scenario": "TAMPERING" }` |
 | POST | `/api/simulation/reset` | Restart demo journeys; retain audit/history |
