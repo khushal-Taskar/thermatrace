@@ -10,7 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 from io import BytesIO
 from sqlalchemy import select, delete
 from ..database import SessionLocal
-from ..models import User, AuthSession, Vehicle, Container, Alert, SystemSettings, MedicineProfile, Route, SensorDevice, ModelVersion, VoiceSession, VoiceMessage, RescueMission, DispatchMessage, utcnow
+from ..models import User, AuthSession, Vehicle, Container, Alert, NotificationDelivery, SystemSettings, MedicineProfile, Route, SensorDevice, ModelVersion, VoiceSession, VoiceMessage, RescueMission, DispatchMessage, utcnow
 from ..schemas import LoginRequest, ScenarioRequest, Scenario, AssistantRequest, SettingsRequest, UserCreate, UserUpdate, MedicineProfileUpdate, SensorDeviceRequest, SensorPacket, NotificationPreferences, VoiceSessionCreate, VoiceTextTurn, DispatchMessageCreate, RescueStart
 from ..services.auth import require_user, require_roles, verify_password, create_session, token_hash, hash_password
 from ..services.monitoring import overview, fleet_snapshot, history, report
@@ -184,8 +184,11 @@ def _voice_turn(db,session: VoiceSession,text: str,language: str,source: str,fas
     detected=language if language!="auto" else ("hi" if re.search(r"[\u0900-\u097f]",text) else "en")
     operator=VoiceMessage(session_id=session.id,role="USER",text=text.strip(),language=detected,source=source)
     db.add(operator);db.flush()
-    selected_id=session.vehicle_id
+    mentioned=re.search(r"(?:pharma[- ]ev[- ]|vehicle\s+v?|\bv)(\d{1,3})",text.lower())
+    selected_id=f"PHARMA-EV-{int(mentioned.group(1)):03}" if mentioned else session.vehicle_id
     snapshot=next((item for item in fleet_snapshot(db) if item["vehicle"]["vehicle_id"]==selected_id),None)
+    if mentioned and snapshot:
+        session.vehicle_id=selected_id
     action=operational_turn(db,session,text.strip(),detected,snapshot)
     dispatch_messages=[];rescue_mission=None
     if action:
@@ -482,6 +485,25 @@ def notification_preferences(body: NotificationPreferences,user=Depends(require_
 @router.get("/notifications/status")
 def notification_status(request: Request,user=Depends(require_user)):
     return request.app.state.notifier.status()
+
+
+@router.get("/notifications/deliveries")
+def notification_deliveries(user=Depends(require_user)):
+    with SessionLocal() as db:
+        rows=db.scalars(select(NotificationDelivery).where(NotificationDelivery.user_id==user.id).order_by(NotificationDelivery.created_at.desc(),NotificationDelivery.id.desc()).limit(10)).all()
+        result=[]
+        for row in rows:
+            alert=db.get(Alert,row.alert_id)
+            result.append({
+                "id":row.id,"status":row.status,"destination":row.destination,
+                "alert_type":alert.type if alert else "UNKNOWN",
+                "severity":alert.severity if alert else "UNKNOWN",
+                "vehicle_id":alert.vehicle_id if alert else None,
+                "created_at":row.created_at.isoformat() if row.created_at else None,
+                "sent_at":row.sent_at.isoformat() if row.sent_at else None,
+                "error":row.error,
+            })
+        return result
 
 
 @router.post("/notifications/test")

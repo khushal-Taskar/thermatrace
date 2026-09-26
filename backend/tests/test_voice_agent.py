@@ -21,7 +21,7 @@ def test_voice_session_text_turn_and_structured_notes(authenticated,monkeypatch)
     payload=turn.json()
     assert payload["vehicle_id"]=="PHARMA-EV-003"
     assert payload["audio_fallback"]=="BROWSER_SPEECH"
-    assert "cold-chain warning" in payload["assistant"]["text"]
+    assert "Estimated battery margin" in payload["assistant"]["text"]
     completed=authenticated.post(f"/api/voice/sessions/{session_id}/end")
     assert completed.status_code==200
     note=completed.json()

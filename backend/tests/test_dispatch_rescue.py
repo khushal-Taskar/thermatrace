@@ -27,6 +27,13 @@ def test_voice_dispatch_creates_two_separate_inboxes_and_moving_replacement(auth
         assert stopped.json()["audio_pending"] is True
         assert "पुष्टि" in stopped.json()["assistant"]["text"]
 
+        explanation = authenticated.post(
+            f"/api/voice/sessions/{session_id}/message?fast=true",
+            json={"text": "क्यों?", "language": "hi"},
+        )
+        assert explanation.status_code == 200
+        assert "टेलिमेट्री" in explanation.json()["assistant"]["text"]
+
         dispatched = authenticated.post(
             f"/api/voice/sessions/{session_id}/message?fast=true",
             json={"text": "Point B को delay का message भेज दो और Point A को replacement भेजने को बोलो", "language": "hi"},
@@ -38,6 +45,13 @@ def test_voice_dispatch_creates_two_separate_inboxes_and_moving_replacement(auth
         mission = result["rescue_mission"]
         assert mission["replacement_vehicle_id"].startswith("PHARMA-RESCUE-")
         assert mission["status"] == "TO_PICKUP"
+
+        rescue_status = authenticated.post(
+            f"/api/voice/sessions/{session_id}/message?fast=true",
+            json={"text": "नई गाड़ी कहाँ पहुँची?", "language": "hi"},
+        )
+        assert rescue_status.status_code == 200
+        assert mission["replacement_vehicle_id"] in rescue_status.json()["assistant"]["text"]
 
         overview = authenticated.get("/api/overview").json()
         assert any(item["id"] == mission["id"] for item in overview["rescue_missions"])

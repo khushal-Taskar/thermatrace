@@ -29,7 +29,7 @@ This is an educational simulation. Its generated medicine labels, drivers, route
 - Five medicine-specific cold-chain profiles with configurable bands, warning margins, excursion budgets, forecast horizons, handling notes, live excursion duration, remaining-safe-time estimation, and predictive alerts.
 - Rule-based safety detection, trained Isolation Forest anomaly detection, and trained Random Forest risk prediction across 16 signals. Evidence, thresholds, recommended actions, model metrics, and counterfactual feature sensitivities are visible.
 - Local operations assistant with intent recognition, current and historical analytics, and one-click PDF report actions; no paid LLM required.
-- AI Voice Center with Hindi, English and Marathi turns, live database grounding, low-latency deterministic breakdown/dispatch intents, spoken replies, hands-free turn-taking, transcripts, and automatic closing notes. Fast browser recognition is the default when available; private local Faster Whisper can be selected on the local installation. Piper provides Hindi/English speech locally, while Marathi can use a free online neural voice. Raw recordings are not retained by ThermaTrace.
+- AI Voice Center with Hindi, English and Marathi multi-turn conversations, live database grounding, remembered follow-up topics, question-specific battery/container/risk/alert/route/ETA/history answers, breakdown/dispatch actions, spoken replies, hands-free turn-taking, transcripts, and automatic closing notes. Fast browser recognition is the default when available; private local Faster Whisper can be selected on the local installation. Piper provides Hindi/English speech locally, while Marathi can use a free online neural voice. Raw recordings are not retained by ThermaTrace.
 - Dispatch & recovery page with separate persistent Point A and Point B in-app chats, voice-triggered messages, read status, a simulated replacement vehicle, live recovery progress, OSRM road-route refinement and moving map marker. Dispatch is an in-app simulation; it does not send SMS or email to real facilities.
 - Persistent incident episodes, acknowledgement audit, recovery history, and CSV export.
 - Twelve historical signal charts, including temperature forecast, excursion duration, remaining safe time and battery current, with configurable ranges and CSV export.
@@ -219,6 +219,7 @@ Interactive schema is available at `/docs`. All operational endpoints require th
 | POST | `/api/integrations/mqtt/test-ingest` | Validate the real-sensor ingest path |
 | POST | `/api/routes/refresh` | Refresh all road routes from OSRM |
 | GET / PUT | `/api/notifications/status`, `/api/me/notifications` | Channels and user email preferences |
+| GET | `/api/notifications/deliveries` | Signed-in user's recent sent/failed email audit |
 | POST | `/api/notifications/test` | Send a test message to the signed-in user's alert address |
 | GET | `/api/ai/model-validation` | Model provenance, schema, and retraining command |
 | POST | `/api/assistant` | `{ "question": "Which shipment is highest risk?" }` |

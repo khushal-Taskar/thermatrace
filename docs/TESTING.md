@@ -1,10 +1,10 @@
 # Testing Strategy and Results
 
-Automated backend tests use a temporary SQLite database and FastAPI lifespan. The current 50-test suite covers authentication and origin checks, all 13 scenarios, correlated smooth simulation, incident lifecycle, exact aggregates, history, WebSocket tickets, reset behavior, medicine profiles, excursion/forecast math, server PDF bytes, assistant analytics/actions, VIEWER/OPERATOR/ADMIN authorization, MQTT device validation and `synthetic=false`, OSRM GeoJSON parsing, labelled-model schema/training validation, voice-session authorization, database-grounded container answers, transcripts, rescue dispatch, notification deduplication/retry and structured call notes.
+Automated backend tests use a temporary SQLite database and FastAPI lifespan. The current 54-test suite covers authentication and origin checks, all 13 scenarios, correlated smooth simulation, incident lifecycle, exact aggregates, history, WebSocket tickets, reset behavior, medicine profiles, excursion/forecast math, server PDF bytes, assistant analytics/actions, VIEWER/OPERATOR/ADMIN authorization, MQTT device validation and `synthetic=false`, OSRM GeoJSON parsing, labelled-model schema/training validation, multi-turn voice topics and follow-ups, database-grounded container answers, transcripts, rescue dispatch, real SMTP protocol delivery against a local test server, notification deduplication/retry/audit and structured call notes.
 
 Verified on 26 September 2026:
 
-- Backend: **50 passed** (`python -m pytest -q`). Two dependency deprecation warnings originate from Starlette TestClient compatibility aliases.
+- Backend: **54 passed** (`python -m pytest -q`). Two dependency deprecation warnings originate from Starlette TestClient compatibility aliases.
 - Frontend: production Next.js build and TypeScript validation passed (`npm run build`), generating 19 routes.
 - Migration: the populated SQLite database upgraded through `0003_rescue_dispatch`; existing telemetry and incident history were retained.
 - Routing: all five current routes refreshed from public OSRM and stored with 423–817 road points each.

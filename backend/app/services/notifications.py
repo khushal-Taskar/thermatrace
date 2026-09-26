@@ -1,6 +1,7 @@
 """High and critical alert delivery through a configured SMTP account."""
 import smtplib
 import ssl
+import threading
 from datetime import timedelta, timezone
 from email.message import EmailMessage
 
@@ -12,6 +13,7 @@ from ..models import Alert, NotificationDelivery, User, utcnow
 
 class NotificationService:
     retry_delay = timedelta(minutes=5)
+    _dispatch_lock = threading.Lock()
 
     def status(self):
         return {
@@ -23,6 +25,10 @@ class NotificationService:
         }
 
     def dispatch(self, db):
+        with self._dispatch_lock:
+            return self._dispatch_locked(db)
+
+    def _dispatch_locked(self, db):
         if not settings.smtp_host:
             return {"sent": 0, "failed": 0, "disabled": True}
         alerts = db.scalars(

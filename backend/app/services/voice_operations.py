@@ -2,8 +2,9 @@
 import re
 from sqlalchemy import select
 
-from ..models import Vehicle
+from ..models import RescueMission, Vehicle
 from .rescue_dispatch import create_rescue_mission, send_point_message, serialize_message, serialize_mission
+from .voice_queries import answer_live_query
 
 
 def _contains(text, terms):
@@ -108,6 +109,13 @@ def operational_turn(db, session, question, language, snapshot):
             return f"Hello {name}. How can I help with {vehicle_id}?", [], None
         return f"नमस्ते {name} जी। मैं {vehicle_id} के बारे में कैसे मदद कर सकता हूँ?", [], None
 
+    if _contains(q, ["history", "historical", "trend", "average", "last hour", "past hour", "इतिहास", "पिछले एक घंटे", "औसत", "मागील तास", "fleet", "सबसे कम", "सबसे ज्यादा", "सर्वात कमी", "सर्वाधिक", "highest risk", "lowest soc", "which shipment", "delayed deliveries", "देरी वाली", "bms faults"]):
+        response = answer_live_query(db, session, question, language, snapshot)
+        if response:
+            answer, topic = response
+            session.notes = {**(session.notes or {}), "last_topic": topic}
+            return answer, [], None
+
     dispatch_words = ["message", "notify", "send", "भेज", "संदेश", "मैसेज", "कळव", "पाठव", "बोलो", "सांग"]
     wants_b = _contains(q, ["point b", "पॉइंट बी", "पॉइंट ब", "destination", "डेस्टिनेशन"]) and _contains(q, dispatch_words)
     wants_a = _contains(q, ["point a", "पॉइंट ए", "पॉइंट अ", "replacement", "रिप्लेसमेंट", "बदली वाहन", "नई गाड़ी", "नवीन गाडी"]) and _contains(q, dispatch_words)
@@ -156,13 +164,30 @@ def operational_turn(db, session, question, language, snapshot):
             if mission:
                 answer += (f" {mission.replacement_vehicle_id} का रेस्क्यू मिशन पहले ही पूरा हो चुका है।" if mission.status == "COMPLETED" else f" {mission.replacement_vehicle_id} रिप्लेसमेंट गाड़ी भेजी गई है।")
             answer += f" कंटेनर का अनुमानित सुरक्षित समय {container['remaining_safe_time_minutes']:.0f} मिनट है; यह दवा की सुरक्षा की गारंटी नहीं है।"
+        session.notes = {**(session.notes or {}), "last_topic": "dispatch"}
         return answer, [serialize_message(item) for item in messages], serialize_mission(mission) if mission else None
+
+    if _contains(q, ["replacement status", "rescue status", "replacement कहाँ", "नई गाड़ी कहाँ", "बदली वाहन कुठे", "रिप्लेसमेंट कहाँ"]):
+        mission = db.scalar(select(RescueMission).where(RescueMission.incident_vehicle_id == vehicle_id).order_by(RescueMission.id.desc()))
+        if not mission:
+            answer = {"hi": "इस गाड़ी के लिए अभी कोई replacement mission दर्ज नहीं है।", "mr": "या वाहनासाठी अद्याप बदली वाहन मोहीम नोंदलेली नाही."}.get(language, "No replacement mission is recorded for this vehicle yet.")
+        elif language == "mr":
+            answer = f"{mission.replacement_vehicle_id} ची स्थिती {mission.status} आहे. बचाव मोहीम {mission.progress:.0f}% पूर्ण झाली आहे; सध्याचा वेग {mission.speed:.1f} किमी प्रति तास आहे."
+        elif language == "hi":
+            answer = f"{mission.replacement_vehicle_id} की स्थिति {mission.status} है। Rescue mission {mission.progress:.0f}% पूरा है और अभी गति {mission.speed:.1f} किमी प्रति घंटा है।"
+        else:
+            answer = f"{mission.replacement_vehicle_id} is {mission.status}. The rescue mission is {mission.progress:.0f}% complete and moving at {mission.speed:.1f} km/h."
+        session.notes = {**(session.notes or {}), "last_topic": "dispatch"}
+        return answer, [], None
 
     stopped = _contains(q, ["रुक गई", "रुक गया", "बंद पड", "थांबली", "stopped", "broke down", "breakdown"])
     why_stopped = _contains(q, ["क्यों रुकी", "क्यों रुका", "का थांब", "why stopped", "why did", "cause of stop"])
+    if (session.notes or {}).get("last_topic") == "breakdown" and q in {"क्यों", "क्यों?", "why", "why?", "कशामुळे", "का"}:
+        why_stopped = True
     if not stopped and not why_stopped:
         container_answer = _container_turn(question, language, snapshot)
         if container_answer:
+            session.notes = {**(session.notes or {}), "last_topic": "container"}
             return container_answer, [], None
     if stopped or why_stopped:
         vehicle = db.get(Vehicle, vehicle_id)
@@ -170,22 +195,16 @@ def operational_turn(db, session, question, language, snapshot):
             vehicle.scenario = "VEHICLE_FAILURE"
             vehicle.state = {**(vehicle.state or {}), "speed": 0, "driver_reported_stop": True}
         cause = _cause(snapshot, language)
+        session.notes = {**(session.notes or {}), "last_topic": "breakdown"}
         if language == "en":
             return f"I recorded the stop for {vehicle_id}. Telemetry shows {cause}. The exact mechanical cause is not confirmed; stop safely and arrange inspection.", [], None
         if language == "mr":
             return f"{vehicle_id} थांबल्याची नोंद केली. टेलिमेट्रीनुसार {cause}. नेमके तांत्रिक कारण निश्चित झालेले नाही; वाहन सुरक्षितपणे थांबवा.", [], None
         return f"{vehicle_id} के रुकने की सूचना दर्ज की। टेलिमेट्री के अनुसार {cause}। सटीक खराबी की पुष्टि नहीं हुई है; वाहन सुरक्षित रोकें।", [], None
 
-    status = _contains(q, ["battery", "बैटरी", "बॅटरी", "container", "कंटेनर", "status", "स्थिति", "स्थिती", "safe time", "सुरक्षित समय"])
-    if status and language != "mr":
-        battery, container = snapshot["battery"], snapshot["container"]
-        if language == "en":
-            return (f"{vehicle_id}: battery {battery['soc']:.1f}% and {battery['battery_temperature']:.1f}°C; "
-                    f"container {container['temperature']:.1f}°C. Estimated remaining safe time "
-                    f"{container['remaining_safe_time_minutes']:.0f} minutes, subject to product-specific review."), [], None
-        if language == "mr":
-            return (f"{vehicle_id}: बॅटरी चार्ज {battery['soc']:.1f} टक्के आणि तापमान {battery['battery_temperature']:.1f} अंश. "
-                    f"कंटेनर {container['temperature']:.1f} अंश. अंदाजे सुरक्षित वेळ {container['remaining_safe_time_minutes']:.0f} मिनिटे; गुणवत्ता तपासणी आवश्यक."), [], None
-        return (f"{vehicle_id}: बैटरी चार्ज {battery['soc']:.1f} प्रतिशत और तापमान {battery['battery_temperature']:.1f} डिग्री है। "
-                f"कंटेनर {container['temperature']:.1f} डिग्री है। अनुमानित सुरक्षित समय {container['remaining_safe_time_minutes']:.0f} मिनट है; गुणवत्ता जाँच ज़रूरी है।"), [], None
+    response = answer_live_query(db, session, question, language, snapshot)
+    if response:
+        answer, topic = response
+        session.notes = {**(session.notes or {}), "last_topic": topic}
+        return answer, [], None
     return None

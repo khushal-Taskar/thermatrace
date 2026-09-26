@@ -141,6 +141,7 @@ def _grounding(db, vehicle_id: str | None, question: str) -> tuple[dict,str | No
         "timestamp":data["timestamp"],
         "fleet_metrics":data["metrics"],
         "structured_answer":deterministic["answer"],
+        "structured_intent":deterministic["intent"],
         "active_alerts":[{
             "vehicle_id":a["vehicle_id"],"type":a["type"],"severity":a["severity"],
             "reason":a["reason"],"recommended_action":a["recommended_action"]
@@ -254,7 +255,7 @@ def _prompt_evidence(evidence: dict) -> dict:
     return compact
 
 
-def _answer_is_grounded(answer: str, evidence: dict) -> bool:
+def _answer_is_grounded(answer: str, evidence: dict, question: str="") -> bool:
     """Reject fluent local-model answers that omit or contradict safety facts."""
     selected=evidence.get("selected_vehicle")
     if not answer or not selected:
@@ -265,17 +266,10 @@ def _answer_is_grounded(answer: str, evidence: dict) -> bool:
     vehicle_id=selected["vehicle"]["vehicle_id"].lower()
     if vehicle_id not in lowered:
         return False
-    expected=[
-        f"{selected['battery']['soc']:.1f}",
-        f"{selected['container']['temperature']:.1f}",
-        str(selected["risk"]["risk_score"]),
-        f"{selected['delivery']['distance_remaining']:.1f}",
-    ]
-    if sum(value in answer for value in expected)<2:
-        return False
-    if selected["risk"]["risk_level"]=="CRITICAL" and not any(term in lowered for term in ["critical","intervention","तुरंत","गंभीर","जोखिम"]):
-        return False
-    return True
+    supplied=json.dumps(_prompt_evidence(evidence),ensure_ascii=False)+" "+question
+    allowed_numbers=set(re.findall(r"\d+(?:\.\d+)?",supplied))|{"100"}
+    answer_numbers=set(re.findall(r"(?<![A-Za-z])\d+(?:\.\d+)?",answer.replace(vehicle_id,"")))
+    return answer_numbers <= allowed_numbers
 
 
 def generate_answer(db, session: VoiceSession, question: str, language: str) -> tuple[str,str | None,dict]:
@@ -298,17 +292,15 @@ def generate_answer(db, session: VoiceSession, question: str, language: str) -> 
     if language=="mr":
         return factual_draft,selected_id,evidence
     prompt_evidence=_prompt_evidence(evidence)
+    previous=list(db.scalars(select(VoiceMessage).where(VoiceMessage.session_id==session.id).order_by(VoiceMessage.id.desc()).limit(5)))
+    conversation=[{"role":"assistant" if message.role=="ASSISTANT" else "user","content":message.text[:400]} for message in reversed(previous)]
     if language not in {"hi","en"}:
         messages=[{"role":"system","content":(
             f"Translate the supplied pharmaceutical vehicle status into natural {requested}. Output only the translation in under 70 words. "
             "Keep the vehicle ID, every number, risk level, reachability assessment and recommended action unchanged. Do not add facts."
         )},{"role":"user","content":factual_draft}]
     else:
-        messages=[{"role":"system","content":system},{"role":"user","content":(
-            f"LIVE FACTS:\n{json.dumps(prompt_evidence,ensure_ascii=False)}\n\n"
-            f"FACTUAL DRAFT:\n{factual_draft}\n\nOPERATOR QUESTION:\n{question}\n\n"
-            "Answer the question using the exact readings and safety assessment above. Preserve the vehicle ID, numbers, risk level, and action."
-        )}]
+        messages=[{"role":"system","content":system},{"role":"user","content":f"CURRENT DATABASE FACTS:\n{json.dumps(prompt_evidence,ensure_ascii=False)}"},*conversation,{"role":"user","content":f"Current question: {question}. Answer only this question briefly. Include only relevant readings; do not recite the full vehicle status."}]
     try:
         response=httpx.post(
             f"{settings.ollama_base_url.rstrip('/')}/api/chat",
@@ -317,10 +309,16 @@ def generate_answer(db, session: VoiceSession, question: str, language: str) -> 
         )
         response.raise_for_status()
         answer=response.json().get("message",{}).get("content","").strip()
-        if not _answer_is_grounded(answer,evidence):
+        if not _answer_is_grounded(answer,evidence,question):
             raise ValueError("Local model answer did not preserve the grounded safety evidence")
     except Exception:
-        answer=_fallback_answer(evidence,language)
+        if evidence.get("structured_intent") not in {"help","vehicle_risk"}:
+            answer=evidence["structured_answer"]
+        else:
+            answer={
+                "hi":"मैं इस वाहन की बैटरी और रेंज, दवा और कंटेनर, जोखिम की वजह, अलर्ट, रास्ता और पहुँचने का समय बता सकता हूँ। सवाल थोड़ा स्पष्ट बताइए।",
+                "mr":"मी या वाहनाची बॅटरी आणि रेंज, औषध आणि कंटेनर, धोक्याचे कारण, सूचना, मार्ग आणि पोहोचण्याची वेळ सांगू शकतो. प्रश्न थोडा स्पष्ट विचारा.",
+            }.get(language,"I can answer questions about this vehicle's battery and range, medicine and container, risk factors, alerts, route and ETA. Please ask a specific question.")
     return answer,selected_id,evidence
 
 

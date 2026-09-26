@@ -1,4 +1,6 @@
 from datetime import timedelta
+import socketserver
+from threading import Thread
 
 from sqlalchemy import delete, select
 
@@ -15,6 +17,7 @@ def _alert(severity="HIGH"):
         shipment_id="SHIP-001",
         type="TEMPERATURE_EXCURSION",
         severity=severity,
+        timestamp=utcnow(),
         reason="Container temperature exceeded its medicine profile.",
         recommended_action="Inspect the container and move it to qualified cold storage.",
         telemetry_snapshot={"container_temperature": 10.4, "soc": 62.0},
@@ -23,9 +26,10 @@ def _alert(severity="HIGH"):
     )
 
 
-def test_email_dispatch_is_deduplicated_and_failed_delivery_retries(monkeypatch):
+def test_email_dispatch_is_deduplicated_and_failed_delivery_retries(authenticated, monkeypatch):
     service = NotificationService()
     sent = []
+    retry_id = None
     monkeypatch.setattr(settings, "smtp_host", "smtp.test.local")
     monkeypatch.setattr(service, "_send_alert", lambda destination, alert: sent.append((destination, alert.id)))
 
@@ -46,6 +50,9 @@ def test_email_dispatch_is_deduplicated_and_failed_delivery_retries(monkeypatch)
             assert first["sent"] >= 1
             assert delivery.status == "SENT"
             assert delivery.destination == "alerts@example.com"
+        audit = authenticated.get("/api/notifications/deliveries")
+        assert audit.status_code == 200
+        assert any(row["destination"] == "alerts@example.com" and row["status"] == "SENT" for row in audit.json())
 
         sent_before = len(sent)
         with SessionLocal() as db:
@@ -74,8 +81,9 @@ def test_email_dispatch_is_deduplicated_and_failed_delivery_retries(monkeypatch)
             assert delivery.status == "SENT"
     finally:
         with SessionLocal() as db:
-            db.execute(delete(NotificationDelivery).where(NotificationDelivery.alert_id.in_([alert_id, retry_id])))
-            db.execute(delete(Alert).where(Alert.id.in_([alert_id, retry_id])))
+            ids = [value for value in [alert_id, retry_id] if value is not None]
+            db.execute(delete(NotificationDelivery).where(NotificationDelivery.alert_id.in_(ids)))
+            db.execute(delete(Alert).where(Alert.id.in_(ids)))
             user = db.get(User, user_id)
             user.notification_email, user.email_notifications = original
             db.commit()
@@ -112,3 +120,56 @@ def test_notification_preferences_validate_email_and_test_endpoint(authenticated
             user = db.get(User, user_id)
             user.notification_email, user.email_notifications = original
             db.commit()
+
+
+def test_email_transport_sends_test_and_alert_to_local_smtp_server(monkeypatch):
+    messages = []
+
+    class SMTPHandler(socketserver.StreamRequestHandler):
+        def handle(self):
+            self.wfile.write(b"220 localhost test SMTP\r\n")
+            body = bytearray()
+            in_data = False
+            while line := self.rfile.readline():
+                command = line.strip().upper()
+                if in_data:
+                    if command == b".":
+                        messages.append(bytes(body))
+                        body.clear()
+                        in_data = False
+                        self.wfile.write(b"250 queued\r\n")
+                    else:
+                        body.extend(line)
+                elif command.startswith(b"EHLO"):
+                    self.wfile.write(b"250-localhost\r\n250 SIZE 1000000\r\n")
+                elif command == b"DATA":
+                    in_data = True
+                    self.wfile.write(b"354 send data\r\n")
+                elif command == b"QUIT":
+                    self.wfile.write(b"221 bye\r\n")
+                    break
+                else:
+                    self.wfile.write(b"250 OK\r\n")
+
+    class SMTPServer(socketserver.ThreadingTCPServer):
+        allow_reuse_address = True
+
+    with SMTPServer(("127.0.0.1", 0), SMTPHandler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        monkeypatch.setattr(settings, "smtp_host", "127.0.0.1")
+        monkeypatch.setattr(settings, "smtp_port", server.server_address[1])
+        monkeypatch.setattr(settings, "smtp_starttls", False)
+        monkeypatch.setattr(settings, "smtp_use_ssl", False)
+        monkeypatch.setattr(settings, "smtp_username", "")
+        service = NotificationService()
+        service.send_test("control@example.com")
+        service._send_alert("control@example.com", _alert())
+        server.shutdown()
+        thread.join(timeout=2)
+
+    assert len(messages) == 2
+    assert b"ThermaTrace alert email test" in messages[0]
+    assert b"control@example.com" in messages[0]
+    assert b"[HIGH] ThermaTrace TEMPERATURE_EXCURSION" in messages[1]
+    assert b"Recommended action" in messages[1]
