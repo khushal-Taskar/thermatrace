@@ -87,6 +87,12 @@ Save the variable and let Render restart. Additional trusted origins can be comm
 | `ADMIN_EMAIL` | Render | No |
 | `FRONTEND_ORIGINS` | Render | No |
 | `COOKIE_SECURE` | Render | No |
+| `SMTP_HOST` | Render | No |
+| `SMTP_PORT` | Render | No |
+| `SMTP_USERNAME` | Render | Yes |
+| `SMTP_PASSWORD` | Render | Yes |
+| `SMTP_FROM` | Render | No |
+| `SMTP_STARTTLS` / `SMTP_USE_SSL` | Render | No |
 | `BACKEND_URL` | Vercel | No |
 | `NEXT_PUBLIC_WS_URL` | Vercel | No |
 
