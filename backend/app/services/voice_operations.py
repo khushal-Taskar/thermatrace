@@ -109,6 +109,12 @@ def operational_turn(db, session, question, language, snapshot):
             return f"Hello {name}. How can I help with {vehicle_id}?", [], None
         return f"नमस्ते {name} जी। मैं {vehicle_id} के बारे में कैसे मदद कर सकता हूँ?", [], None
 
+    if _contains(q, ["what can you answer", "what can i ask", "help me", "क्या पूछ", "क्या बता", "क्या कर सकते", "काय विचार", "काय सांगू शक"]):
+        return {
+            "en": "Ask me about battery range and health, medicine and container safety, risk reasons, alerts, route and ETA, fleet history, delays, or rescue status. You can also say: send a rescue request to Dispatch.",
+            "mr": "बॅटरी रेंज व आरोग्य, औषध व कंटेनर सुरक्षा, धोक्याची कारणे, सूचना, मार्ग व पोहोचण्याची वेळ, इतिहास, उशीर किंवा बचाव स्थिती विचारा. 'Dispatch ला rescue request पाठवा' असेही सांगू शकता.",
+        }.get(language, "आप बैटरी और रेंज, दवा और कंटेनर सुरक्षा, जोखिम की वजह, अलर्ट, रास्ता और ETA, history, delay या rescue status पूछ सकते हैं। आप यह भी बोल सकते हैं: Rescue request Dispatch को भेजो।"), [], None
+
     if _contains(q, ["history", "historical", "trend", "average", "last hour", "past hour", "इतिहास", "पिछले एक घंटे", "औसत", "मागील तास", "fleet", "सबसे कम", "सबसे ज्यादा", "सर्वात कमी", "सर्वाधिक", "highest risk", "lowest soc", "which shipment", "delayed deliveries", "देरी वाली", "bms faults"]):
         response = answer_live_query(db, session, question, language, snapshot)
         if response:
@@ -117,8 +123,9 @@ def operational_turn(db, session, question, language, snapshot):
             return answer, [], None
 
     dispatch_words = ["message", "notify", "send", "भेज", "संदेश", "मैसेज", "कळव", "पाठव", "बोलो", "सांग"]
-    wants_b = _contains(q, ["point b", "पॉइंट बी", "पॉइंट ब", "destination", "डेस्टिनेशन"]) and _contains(q, dispatch_words)
-    wants_a = _contains(q, ["point a", "पॉइंट ए", "पॉइंट अ", "replacement", "रिप्लेसमेंट", "बदली वाहन", "नई गाड़ी", "नवीन गाडी"]) and _contains(q, dispatch_words)
+    rescue_request = _contains(q, ["rescue request", "send rescue", "dispatch rescue", "rescue vehicle", "replacement request", "रेस्क्यू", "बचाव वाहन", "नई गाड़ी भेज", "बदली वाहन पाठव"])
+    wants_b = rescue_request or (_contains(q, ["point b", "पॉइंट बी", "पॉइंट ब", "destination", "डेस्टिनेशन"]) and _contains(q, dispatch_words))
+    wants_a = rescue_request or (_contains(q, ["point a", "पॉइंट ए", "पॉइंट अ", "replacement", "रिप्लेसमेंट", "बदली वाहन", "नई गाड़ी", "नवीन गाडी"]) and _contains(q, dispatch_words))
     if wants_a or wants_b:
         delivery = snapshot["delivery"]
         container = snapshot["container"]

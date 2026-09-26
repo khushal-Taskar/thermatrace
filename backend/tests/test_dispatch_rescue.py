@@ -34,9 +34,16 @@ def test_voice_dispatch_creates_two_separate_inboxes_and_moving_replacement(auth
         assert explanation.status_code == 200
         assert "टेलिमेट्री" in explanation.json()["assistant"]["text"]
 
+        capabilities = authenticated.post(
+            f"/api/voice/sessions/{session_id}/message?fast=true",
+            json={"text": "मैं आपसे क्या पूछ सकता हूँ?", "language": "hi"},
+        )
+        assert capabilities.status_code == 200
+        assert "Rescue request" in capabilities.json()["assistant"]["text"]
+
         dispatched = authenticated.post(
             f"/api/voice/sessions/{session_id}/message?fast=true",
-            json={"text": "Point B को delay का message भेज दो और Point A को replacement भेजने को बोलो", "language": "hi"},
+            json={"text": "Rescue request Dispatch को भेजो", "language": "hi"},
         )
         assert dispatched.status_code == 200
         result = dispatched.json()
