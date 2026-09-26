@@ -13,7 +13,7 @@ from ..database import SessionLocal
 from ..models import User, AuthSession, Vehicle, Container, Alert, NotificationDelivery, SystemSettings, MedicineProfile, Route, SensorDevice, ModelVersion, VoiceSession, VoiceMessage, RescueMission, DispatchMessage, utcnow
 from ..schemas import LoginRequest, ScenarioRequest, Scenario, AssistantRequest, SettingsRequest, UserCreate, UserUpdate, MedicineProfileUpdate, SensorDeviceRequest, SensorPacket, NotificationPreferences, VoiceSessionCreate, VoiceTextTurn, DispatchMessageCreate, RescueStart
 from ..services.auth import require_user, require_roles, verify_password, create_session, token_hash, hash_password
-from ..services.monitoring import overview, fleet_snapshot, history, report
+from ..services.monitoring import overview, fleet_snapshot, vehicle_snapshot, history, report
 from ..ai.assistant import answer_question
 from ..config import settings
 from ..services.routing import refresh_route, RoutingError
@@ -186,7 +186,7 @@ def _voice_turn(db,session: VoiceSession,text: str,language: str,source: str,fas
     db.add(operator);db.flush()
     mentioned=re.search(r"(?:pharma[- ]ev[- ]|vehicle\s+v?|\bv)(\d{1,3})",text.lower())
     selected_id=f"PHARMA-EV-{int(mentioned.group(1)):03}" if mentioned else session.vehicle_id
-    snapshot=next((item for item in fleet_snapshot(db) if item["vehicle"]["vehicle_id"]==selected_id),None)
+    snapshot=vehicle_snapshot(db,selected_id) if selected_id else None
     if mentioned and snapshot:
         session.vehicle_id=selected_id
     action=operational_turn(db,session,text.strip(),detected,snapshot)

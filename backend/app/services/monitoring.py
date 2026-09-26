@@ -9,21 +9,26 @@ def serialize_alert(alert):
     return {column.name: (getattr(alert,column.name).replace(tzinfo=timezone.utc).isoformat() if hasattr(getattr(alert,column.name),"isoformat") else getattr(alert,column.name)) for column in Alert.__table__.columns}
 
 
+def vehicle_snapshot(db, vehicle_id):
+    """Load one current vehicle view without scanning the rest of the fleet."""
+    vehicle=db.get(Vehicle,vehicle_id)
+    if not vehicle:
+        return None
+    record=db.scalar(select(TelemetryHistory).where(TelemetryHistory.vehicle_id==vehicle.id).order_by(TelemetryHistory.timestamp.desc(),TelemetryHistory.id.desc()).limit(1))
+    if not record:
+        return None
+    snapshot=dict(record.snapshot)
+    delivery=db.scalar(select(Delivery).where(Delivery.vehicle_id==vehicle.id))
+    route=db.get(Route,delivery.route_id)
+    container=db.get(Container,delivery.container_id)
+    snapshot["delivery"]={**snapshot["delivery"],"planned_route":route.planned_route,"actual_route":vehicle.state.get("actual_route",[]),"route_provider":route.provider,"route_duration_minutes":route.duration_minutes}
+    snapshot["container"]={**snapshot["container"],"min_temperature":container.min_temperature,"max_temperature":container.max_temperature}
+    snapshot["scenario"]=vehicle.scenario
+    return snapshot
+
+
 def fleet_snapshot(db):
-    fleet=[]
-    for vehicle in db.scalars(select(Vehicle).order_by(Vehicle.id)):
-        record=db.scalar(select(TelemetryHistory).where(TelemetryHistory.vehicle_id==vehicle.id).order_by(TelemetryHistory.timestamp.desc(),TelemetryHistory.id.desc()).limit(1))
-        if not record:
-            continue
-        snapshot=dict(record.snapshot)
-        delivery=db.scalar(select(Delivery).where(Delivery.vehicle_id==vehicle.id))
-        route=db.get(Route,delivery.route_id)
-        container=db.get(Container,delivery.container_id)
-        snapshot["delivery"]={**snapshot["delivery"],"planned_route":route.planned_route,"actual_route":vehicle.state.get("actual_route",[]),"route_provider":route.provider,"route_duration_minutes":route.duration_minutes}
-        snapshot["container"]={**snapshot["container"],"min_temperature":container.min_temperature,"max_temperature":container.max_temperature}
-        snapshot["scenario"]=vehicle.scenario
-        fleet.append(snapshot)
-    return fleet
+    return [snapshot for vehicle in db.scalars(select(Vehicle).order_by(Vehicle.id)) if (snapshot:=vehicle_snapshot(db,vehicle.id))]
 
 
 def overview(db):
@@ -53,9 +58,11 @@ def history(db, vehicle_id=None, hours=1):
 
 
 def report(db, kind, vehicle_id=None, hours=24):
-    fleet=fleet_snapshot(db)
     if vehicle_id:
-        fleet=[s for s in fleet if s["vehicle"]["vehicle_id"]==vehicle_id]
+        snapshot=vehicle_snapshot(db,vehicle_id)
+        fleet=[snapshot] if snapshot else []
+    else:
+        fleet=fleet_snapshot(db)
     fields={"shipment":["temperature","humidity","excursion_duration_minutes","remaining_safe_time_minutes","delay_minutes","risk_score"],"vehicle":["speed","motor_temperature","risk_score"],"battery":["soc","soh","battery_temperature","pack_current"],"container":["temperature","humidity","excursion_duration_minutes","remaining_safe_time_minutes","predicted_temperature"],"risk":["risk_score"],"incident":["risk_score","delay_minutes"]}[kind]
     locations={"soc":"battery","soh":"battery","battery_temperature":"battery","pack_current":"battery","speed":"vehicle","motor_temperature":"vehicle","temperature":"container","humidity":"container","excursion_duration_minutes":"container","remaining_safe_time_minutes":"container","predicted_temperature":"container","risk_score":"risk","delay_minutes":"delivery"}
     aggregate_columns=[func.count(TelemetryHistory.id).label("samples")]
