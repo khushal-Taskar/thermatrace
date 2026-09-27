@@ -40,7 +40,7 @@ def _cause(snapshot, language):
 def _container_turn(question, language, snapshot):
     q = question.lower()
     container = snapshot["container"]
-    mentions_container = _contains(q, ["container", "कंटेनर", "medicine", "drug", "दवा", "औषध", "shipment", "शिपमेंट", "batch", "बॅच", "cold chain", "कोल्ड चेन"])
+    mentions_container = _contains(q, ["container", "कंटेनर", "medicine", "drug", "दवा", "दवाई", "मेडिसिन", "औषध", "shipment", "शिपमेंट", "batch", "बॅच", "cold chain", "कोल्ड चेन"])
     asks_condition = _contains(q, ["temperature", "तापमान", "humidity", "नमी", "आर्द्रता", "excursion", "door", "दरवाज", "दार", "tamper", "छेड़", "छेड", "shock", "safe time", "सुरक्षित समय", "सुरक्षित वेळ", "predict", "पूर्वानुमान"])
     asks_vehicle = _contains(q, ["battery", "बैटरी", "बॅटरी", "motor", "मोटर", "मोटरची"])
     if asks_vehicle or not (mentions_container or asks_condition):
@@ -72,7 +72,7 @@ def _container_turn(question, language, snapshot):
         if language == "hi":
             return f"{medicine} के लिए अनुमानित सुरक्षित समय {remaining:.0f} मिनट बचा है। तापमान सीमा से बाहर रहने का समय {excursion:.1f} मिनट है। अंतिम निर्णय गुणवत्ता टीम करेगी।"
         return f"Estimated remaining safe time for {medicine} is {remaining:.0f} minutes; excursion duration is {excursion:.1f} minutes. Quality release requires product-specific review."
-    if _contains(q, ["which medicine", "what medicine", "कौन सी दवा", "कौनसी दवा", "कोणते औषध", "batch", "बॅच"]):
+    if _contains(q, ["which medicine", "what medicine", "which drug", "what drug", "कौन सी दवा", "कौनसी दवा", "कौन-सी दवा", "कौन सी दवाई", "कौनसी दवाई", "कौन सी मेडिसिन", "कौनसी मेडिसिन", "कौन-सी मेडिसिन", "कोणते औषध", "batch", "बॅच"]):
         if language == "mr":
             return f"{container['container_id']} मध्ये {medicine} आहे. बॅच क्रमांक {batch}; शिपमेंट {container['shipment_id']} आहे."
         if language == "hi":
@@ -115,7 +115,7 @@ def operational_turn(db, session, question, language, snapshot):
             "mr": "बॅटरी रेंज व आरोग्य, औषध व कंटेनर सुरक्षा, धोक्याची कारणे, सूचना, मार्ग व पोहोचण्याची वेळ, इतिहास, उशीर किंवा बचाव स्थिती विचारा. 'Dispatch ला rescue request पाठवा' असेही सांगू शकता.",
         }.get(language, "आप बैटरी और रेंज, दवा और कंटेनर सुरक्षा, जोखिम की वजह, अलर्ट, रास्ता और ETA, history, delay या rescue status पूछ सकते हैं। आप यह भी बोल सकते हैं: Rescue request Dispatch को भेजो।"), [], None
 
-    if _contains(q, ["history", "historical", "trend", "average", "last hour", "past hour", "इतिहास", "पिछले एक घंटे", "औसत", "मागील तास", "fleet", "सबसे कम", "सबसे ज्यादा", "सर्वात कमी", "सर्वाधिक", "highest risk", "lowest soc", "which shipment", "delayed deliveries", "देरी वाली", "bms faults"]):
+    if _contains(q, ["history", "historical", "trend", "average", "last hour", "past hour", "इतिहास", "पिछले एक घंटे", "औसत", "मागील तास", "fleet", "सबसे कम", "सबसे ज्यादा", "सर्वात कमी", "सर्वाधिक", "highest risk", "lowest soc", "which shipment", "delayed deliveries", "deliveries delayed", "कौन सी deliveries", "कौन सी डिलीवरी", "कौनसी डिलीवरी", "देरी वाली", "bms faults"]):
         response = answer_live_query(db, session, question, language, snapshot)
         if response:
             answer, topic = response

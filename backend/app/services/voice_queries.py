@@ -91,7 +91,7 @@ def answer_live_query(db, session, question: str, language: str, snapshot: dict)
             f"मागील {hours} तासांच्या {summary['sample_count']} नोंदींमध्ये {vehicle_id} चे {field.replace('_', ' ')} सरासरी {stats['average']}{unit} होते; किमान {stats['minimum']} आणि कमाल {stats['maximum']}.",
         ), "history"
 
-    fleet_question = _has(q, "fleet", "सबसे कम", "सबसे ज्यादा", "सर्वात कमी", "सर्वाधिक", "highest risk", "lowest soc", "which shipment", "which vehicle", "delayed deliveries", "देरी वाली", "उशिरा", "bms faults")
+    fleet_question = _has(q, "fleet", "सबसे कम", "सबसे ज्यादा", "सर्वात कमी", "सर्वाधिक", "highest risk", "lowest soc", "which shipment", "which vehicle", "delayed deliveries", "deliveries delayed", "कौन सी deliveries", "कौन सी डिलीवरी", "कौनसी डिलीवरी", "देरी वाली", "उशिरा", "bms faults")
     if fleet_question:
         fleet = overview(db)["fleet"]
         if fleet and _has(q, "lowest", "कम battery", "कम बैटरी", "कम चार्ज", "सर्वात कमी"):
@@ -149,7 +149,7 @@ def answer_live_query(db, session, question: str, language: str, snapshot: dict)
         ), "risk"
 
     asks_battery = _has(q, "battery", "bms", "soc", "charge", "range", "बैटरी", "बॅटरी", "चार्ज", "कितना चल", "किती चाल", "बिजली")
-    asks_container = _has(q, "container", "कंटेनर", "medicine", "दवा", "औषध")
+    asks_container = _has(q, "container", "कंटेनर", "medicine", "drug", "दवा", "दवाई", "मेडिसिन", "औषध")
     if asks_battery and asks_container:
         cooling = battery["battery_temperature"] >= 45
         return _reply(language,
