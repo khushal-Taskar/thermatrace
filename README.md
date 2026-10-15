@@ -2,7 +2,7 @@
 
 **AI-Based Intelligent Pharmaceutical Transportation and Cold-Chain Risk Monitoring System**
 
-A complete local software simulation for a final-year engineering project. ThermaTrace brings pharmaceutical containers, electric transport vehicles, battery health, delivery routes, incidents, historical telemetry, and explainable local AI into one responsive operations control center. No devices, cloud subscriptions, maps keys, or paid LLM APIs are required.
+A complete software simulation for a final-year engineering project. ThermaTrace brings pharmaceutical containers, electric transport vehicles, battery health, delivery routes, incidents, historical telemetry, and explainable AI into one responsive operations control center. The application supports both local operation and a hosted demonstration.
 
 ## Live demonstration
 
@@ -10,7 +10,7 @@ A complete local software simulation for a final-year engineering project. Therm
 - API health: **https://thermatrace-api.onrender.com/api/health**
 - Cloud demo admin: `admin@thermatrace.local` / the password configured during deployment. The local seeded default is shown in the login screen.
 
-The public demo uses Vercel, Render and Supabase free tiers. The Render service can sleep after inactivity, so the first request may take about a minute while it wakes. The local setup below remains the full zero-cost option and includes the local voice-model runtime.
+The public demo uses Vercel, Render, and Supabase. The backend may sleep after inactivity, so the first request can take about a minute. The local setup below includes the complete voice-model runtime.
 
 ## Problem statement and objectives
 
@@ -24,12 +24,12 @@ This is an educational simulation. Its generated medicine labels, drivers, route
 - Five populated EVs (`PHARMA-EV-001` through `005`) transporting different medicine shipments around Pune.
 - Correlated telemetry every three seconds: GPS, motor, speed, SOC/SOH, current, voltage, battery temperature, container conditions, delivery progress, and risk.
 - FastAPI native WebSocket updates with authentication, automatic reconnection, and one-time connection tickets.
-- OpenStreetMap / React-Leaflet map with smoothly moving markers, OSRM road geometry, actual track, source/destination, ETA, and deviation indication. Public OSRM is free and stored routes remain available offline.
+- OpenStreetMap / React-Leaflet map with smoothly moving markers, OSRM road geometry, actual track, source/destination, ETA, and deviation indication. Stored routes remain available when the routing service is unavailable.
 - Thirteen scenarios: normal delivery, low battery, battery overheating, motor overheating, temperature excursion, humidity, open door, tampering, shock, route deviation, delay, vehicle failure, BMS fault.
 - Five medicine-specific cold-chain profiles with configurable bands, warning margins, excursion budgets, forecast horizons, handling notes, live excursion duration, remaining-safe-time estimation, and predictive alerts.
 - Rule-based safety detection, trained Isolation Forest anomaly detection, and trained Random Forest risk prediction across 16 signals. Evidence, thresholds, recommended actions, model metrics, and counterfactual feature sensitivities are visible.
-- Local operations assistant with intent recognition, current and historical analytics, and one-click PDF report actions; no paid LLM required.
-- AI Voice Center with Hindi, English and Marathi multi-turn conversations, live database grounding, remembered follow-up topics, question-specific battery/container/risk/alert/route/ETA/history answers, breakdown/dispatch actions, spoken replies, hands-free turn-taking, transcripts, and automatic closing notes. Fast browser recognition is the default when available; private local Faster Whisper can be selected on the local installation. Piper provides Hindi/English speech locally, while Marathi can use a free online neural voice. Raw recordings are not retained by ThermaTrace.
+- Local operations assistant with intent recognition, current and historical analytics, and one-click PDF report actions.
+- AI Voice Center with Hindi, English and Marathi multi-turn conversations, live database grounding, remembered follow-up topics, question-specific battery/container/risk/alert/route/ETA/history answers, breakdown/dispatch actions, spoken replies, hands-free turn-taking, transcripts, and automatic closing notes. Fast browser recognition is the default when available; private local Faster Whisper can be selected on the local installation. Piper provides Hindi/English speech locally, while Marathi can use a compatible online neural voice. Raw recordings are not retained by ThermaTrace.
 - Dispatch & recovery page with separate persistent Point A and Point B in-app chats, voice-triggered messages, read status, a simulated replacement vehicle, live recovery progress, OSRM road-route refinement and moving map marker. Dispatch is an in-app simulation; it does not send SMS or email to real facilities.
 - Persistent incident episodes, acknowledgement audit, recovery history, and CSV export.
 - Twelve historical signal charts, including temperature forecast, excursion duration, remaining safe time and battery current, with configurable ranges and CSV export.
@@ -154,7 +154,7 @@ Use `localhost:3100` consistently. Both `localhost:3100` and `127.0.0.1:3100` ar
 
 `start.ps1` runs `alembic upgrade head`, then seeds profiles, users, routes, vehicles, containers, deliveries, and one hour of chart history when needed. SQLite remains the zero-configuration default at `backend/data/pharmatrace.db`; foreign keys and WAL are enabled. Live records survive restart, old telemetry/risk history is pruned after 30 days, and incident audit records are retained.
 
-To use free local PostgreSQL with Docker:
+To use local PostgreSQL with Docker:
 
 ```powershell
 docker compose -f docker-compose.postgres.yml up -d
@@ -281,11 +281,11 @@ npm run build
 
 The backend tests use a temporary SQLite database, leaving the demo database intact. Browser verification covers all thirteen sections, native WebSocket frames, voice session lifecycle, scenario controls, assistant explanations, acknowledgement, history and report interactions. See `docs/TESTING.md` for test strategy and actual results. Direct PDF generation is server-side and needs no external service; browser print remains available as a second option.
 
-## Cost and deployment
+## Deployment and operating requirements
 
-The complete local demonstration is designed to run without paid APIs, cloud services, or hardware. Internet is used only for the OpenStreetMap basemap and initial dependency installation. Optional public hosting, production map/routing services, a custom domain, SMS alerts, managed database capacity, or an external LLM can introduce cost. See [`docs/COSTS_AND_FREE_DEPLOYMENT.md`](docs/COSTS_AND_FREE_DEPLOYMENT.md) for the free-first deployment recommendation and cost matrix.
+The local demonstration uses the built-in simulator and locally configured services. OpenStreetMap tiles and initial dependency installation require internet access. Hosting capacity, a custom domain, external messaging, managed database capacity, or an external LLM may add operating costs. See the [deployment runbook](docs/DEPLOYMENT.md) and [cost guide](docs/COSTS_AND_FREE_DEPLOYMENT.md) for setup requirements and service limits.
 
-### Public free-tier deployment
+### Hosted deployment
 
 The repository is prepared for a three-service deployment:
 
@@ -293,18 +293,18 @@ The repository is prepared for a three-service deployment:
 - **Render Free Web Service** reads `render.yaml`, runs Alembic, starts FastAPI, and serves the native WebSocket.
 - **Supabase Free** supplies persistent PostgreSQL storage so telemetry, alerts, users, and reports survive Render restarts.
 
-Use [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the exact order and environment values. The cloud build intentionally omits Whisper and Piper because their model/runtime memory exceeds a reliable free web service. The deployed Voice Center retains typed, database-grounded answers and browser speech; the full microphone, Whisper, Ollama, and Piper workflow remains available in the local demonstration.
+Use [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the exact order and environment values. The hosted backend omits Whisper and Piper because of its runtime memory limits. The deployed Voice Center retains typed, database-grounded answers and browser speech; the full microphone, Whisper, Ollama, and Piper workflow remains available in the local demonstration.
 
 ## Reference repositories and attribution
 
 Inspected through the connected GitHub integration:
 
-- [Pharmaceutical Supply Chain Agentic AI](https://github.com/MahdiNavaei/pharmaceutical-supply-chain-agentic-ai): separate monitoring/service architecture and severity-prioritized insight patterns. Its paid LLM/inventory architecture is not carried into this project.
+- [Pharmaceutical Supply Chain Agentic AI](https://github.com/MahdiNavaei/pharmaceutical-supply-chain-agentic-ai): separate monitoring/service architecture and severity-prioritized insight patterns. Its LLM/inventory architecture is not carried into this project.
 - [AWS FSAE EV Telemetry](https://github.com/Zinale/aws-iot-fsae-telemetry): grouped motor/GPS/pack/fault telemetry schema and producer-to-consumer flow. AWS/serial hardware dependencies are not used.
 - [Pharmaceutical Cold Chain Monitoring](https://github.com/abikeidris235/Pharmaceutical-cold-chain-monitoring): excursion records, acknowledgement, and custody/audit concepts. Blockchain and regulatory compliance claims are not inherited.
 - [TrackMate](https://github.com/Maganti-Praveen/TrackMate): timestamped tracks, route checkpoint sequencing, and trip-state patterns. Bus/student concepts are replaced with pharmaceutical vehicle/container/delivery domain models.
 
-No source code or assets were copied from these repositories. This is a separate implementation using conceptual references. Higgsfield was inspected for optional design assets; the connected account had no image-generation credits, so the frontend visuals are maintained directly in code and require no generated assets.
+No source code or assets were copied from these repositories. This is a separate implementation using conceptual references. The frontend visuals are maintained directly in code.
 
 ## Future improvements
 
