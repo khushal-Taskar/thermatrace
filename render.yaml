@@ -5,19 +5,19 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install --upgrade pip && pip install -r requirements-cloud.txt
-    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.10
       - key: DATABASE_URL
-        sync: false
+        value: sqlite:///./data/pharmatrace.db
       - key: ADMIN_EMAIL
         value: admin@thermatrace.local
       - key: ADMIN_PASSWORD
         sync: false
       - key: FRONTEND_ORIGINS
-        sync: false
+        value: https://thermatrace-pharma.vercel.app,http://localhost:3100,http://127.0.0.1:3100
       - key: COOKIE_SECURE
         value: "true"
       - key: SIMULATION_INTERVAL
