@@ -96,7 +96,7 @@ export function VoiceCenter(){
  function resumeListening(){if(!handsFreeRef.current||!activeSessionRef.current)return;window.setTimeout(()=>{if(handsFreeRef.current&&activeSessionRef.current&&!speechRecognition.current)void startRecordingRef.current();},350);}
  async function playAnswer(messageId:number,text:string,language:string,automatic=false){
    speechRun.current+=1;activeAudio.current?.pause();window.speechSynthesis?.cancel();setSpeaking(true);setVoiceFeedback("Speaking the AI answer…");
-   if(automatic&&language!=="mr"){void browserSpeak(text,language);return;}
+   if(automatic){void browserSpeak(text,language);return;}
    let reply=audioReplies.current.get(messageId);
    if(!reply){
      try {const result=await api<{audio_base64:string|null;audio_mime:string|null;spoken_language:string}>(`/voice/messages/${messageId}/audio`);if(result.audio_base64){reply={base64:result.audio_base64,mime:result.audio_mime||"audio/mpeg",language:result.spoken_language};audioReplies.current.set(messageId,reply);}}
@@ -114,7 +114,7 @@ export function VoiceCenter(){
    const synth=window.speechSynthesis,run=++speechRun.current,languageCode=lang.split("-")[0].toLowerCase();synth.cancel();
    const voices=await availableSpeechVoices(synth);if(run!==speechRun.current)return;
    const voice=selectSpeechVoice(voices,languageCode),parts=speechChunks(speechText(text,languageCode));
-   if(languageCode==="mr"&&!voice){setSpeaking(false);setVoiceFeedback("No Marathi or Hindi speech voice is available in this browser. Install an Indian language voice or read the transcript.");return;}
+   if(languageCode==="mr"&&!voice){setVoiceFeedback("Marathi voice is using the available browser speech engine…");}
    setVoiceFeedback(languageCode==="mr"?(voice?.lang.toLowerCase().startsWith("mr")?"मराठी उत्तर वाचत आहे…":"हिंदी आवाजाच्या सहाय्याने मराठी उत्तर वाचत आहे…"):"Speaking the AI answer…");
    const speakPart=(index:number)=>{if(run!==speechRun.current)return;if(index>=parts.length){setSpeaking(false);setVoiceFeedback(null);resumeListening();return;}const utterance=new SpeechSynthesisUtterance(parts[index]);utterance.voice=voice;utterance.lang=voice?.lang||speechLocales[languageCode]||lang;utterance.rate=languageCode==="mr"?.88:.96;utterance.pitch=1;utterance.onend=()=>speakPart(index+1);utterance.onerror=event=>{if(event.error==="canceled"||event.error==="interrupted")return;setSpeaking(false);setVoiceFeedback("Speech playback could not use the selected language voice. The full answer remains in the transcript.");};synth.speak(utterance);};
    speakPart(0);
